@@ -368,7 +368,8 @@ function call(fn, arg, ms, tries) {
       var m = el('div', 'mini'), t = el('div', 'grow');
       t.appendChild(el('div', 'strong', c.teamLabels.join(' + ')));
       var sub = el('div', 'muted small'); sub.appendChild(el('span', null, c.code)); sub.firstChild.style.fontFamily = 'ui-monospace, Menlo, monospace';
-      sub.appendChild(document.createTextNode(' · ' + (c.status === 'collected' ? 'collected' : c.entitlement + ' shirts reserved'))); t.appendChild(sub);
+      var picked = c.lines.reduce(function (a, l) { return a + l.qty; }, 0);   // what it actually holds — a claim may take fewer than its allowance
+      sub.appendChild(document.createTextNode(' · ' + (c.status === 'collected' ? 'collected' : picked + (picked === 1 ? ' shirt' : ' shirts') + ' reserved'))); t.appendChild(sub);
       m.appendChild(t);
       if (c.status !== 'collected' && isOpen()) { var b = el('button', 'btn ghost slim', 'Change'); b.type = 'button'; b.onclick = function () { startAmend(c); }; m.appendChild(b); }
       wrap.appendChild(m);
