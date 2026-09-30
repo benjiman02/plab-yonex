@@ -359,7 +359,7 @@ var COMPANY_LABELS = {"Analog Devices":"Analog Devices (ADI)","Efinix Technology
     var p = el('p', 'muted small'); p.style.margin = '4px 0 0';
     p.appendChild(document.createTextNode('The shirts are free — the photo is how you pay for them. Take a group shot of your team at the opening ceremony '));
     p.appendChild(el('strong', null, 'with your company flag'));
-    p.appendChild(document.createTextNode(', then add it here.' + (S.data.teams.length > 1 ? ' Claiming for more than one team? One shot of everyone together is fine — or each team can claim separately with its own photo.' : '') + ' Only GP Sports staff at the counter will see it, and only to check your claim. Your phone also runs a quick face check on it: nothing is uploaded for that, and it never stops you claiming.'));
+    p.appendChild(document.createTextNode(', then add it here.' + (S.data.teams.length > 1 ? ' Claiming for more than one team? One shot of everyone together is fine — or each team can claim separately with its own photo.' : '') + ' GP Sports staff use it at the counter to check your claim. Your phone also runs a quick face check on it: nothing is uploaded for that, and it never stops you claiming.'));
     sec.appendChild(p);
     var box = el('div', 'photobox'); box.id = 'photobox'; sec.appendChild(box);
     fillPhotoBox(box);

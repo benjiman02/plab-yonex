@@ -203,13 +203,13 @@ function photoNoteText(check, divisions) {
   }
 
   // ---------- sign in ----------
-  function signIn(p) {
+  function signIn(p, open) {
     pin = p; say('loginErr', ''); $('signin').disabled = true; $('signin').textContent = 'Checking…';
     return call('admin_stock', { pin: p }).then(function (r) {
       $('signin').disabled = false; $('signin').textContent = 'Sign in';
       if (!r.ok) { pin = ''; say('loginErr', r.error); return; }
-      put('yx-pin', p); $('login').hidden = true; $('app').hidden = false; $('code').focus();
-      $('who').textContent = 'Signed in.'; showStock(r);
+      put('yx-pin', open ? '' : p); $('login').hidden = true; $('app').hidden = false; $('code').focus();
+      $('who').textContent = open ? 'No PIN is set, so this desk is open to anyone who has this page.' : 'Signed in.'; $('signout').hidden = !!open; showStock(r);
     }, function () { $('signin').disabled = false; $('signin').textContent = 'Sign in'; pin = ''; say('loginErr', 'Couldn’t reach the server. Check the connection and try again.'); });
   }
   function signOut(msg) { pin = ''; put('yx-pin', ''); $('app').hidden = true; $('login').hidden = false; $('pin').value = ''; say('loginErr', msg || ''); $('result').textContent = ''; }
@@ -350,7 +350,10 @@ function photoNoteText(check, divisions) {
   }
 
   // ---------- go ----------
-  var saved = get('yx-pin'); if (saved) signIn(saved); else $('pin').focus();
+  // No PIN in the Sheet (Settings B1 blank) = the desk opens straight away. A PIN typed there brings the sign-in back.
+  var saved = get('yx-pin');
+  function askForPin() { if (saved) signIn(saved); else $('pin').focus(); }
+  call('admin_status', {}).then(function (r) { if (r && r.ok && r.needsPin === false) signIn('', true); else askForPin(); }, askForPin);
 })();
 </script>
 </body>
