@@ -155,6 +155,37 @@ function call(fn, arg, ms, tries) {
   });
 }
 
+/* ---- the quick photo check's advice (pure, so it is tested on its own) ----
+   `check` = { faces, men, women } as counted ON THE PHONE by the small face model; `divisions` = the divisions of the teams
+   being claimed (['mens'], ['womens'], or both). The estimate is rough, so this only ever WARNS — it never blocks a claim.
+   Returns { line: what to tell the captain, warnings: [longer texts], short: [phrases for the desk's one-line note] }. */
+function nOf_(x, one, many) { return x + ' ' + (x === 1 ? one : many); }
+function photoAdvice(check, divisions) {
+  var f = check.faces, m = check.men, w = check.women, out = { line: '', warnings: [], short: [] }, n = nOf_;
+  var mens = divisions.indexOf('mens') >= 0, womens = divisions.indexOf('womens') >= 0;
+  if (f > 0) out.line = 'We can see about ' + n(f, 'person', 'people') + ' (' + n(m, 'man', 'men') + ', ' + n(w, 'woman', 'women') + '). This is only a rough estimate.';
+  if (f === 0) {
+    out.warnings.push('We couldn’t spot any faces in this photo. Make sure your whole team is in the shot, facing the camera, with your company flag.');
+    out.short.push('no faces found');
+  } else if (f < 3) {
+    out.warnings.push('We can only see ' + n(f, 'face', 'faces') + '. Is your whole team in the photo?');
+    out.short.push('only ' + n(f, 'face', 'faces'));
+  } else if (mens && !womens && w > m) {
+    out.warnings.push('This looks like mostly women, but you picked a men’s team.');
+    out.short.push('mostly women, men\'s team');
+  } else if (womens && !mens && m > w) {
+    out.warnings.push('This looks like mostly men, but you picked a women’s team.');
+    out.short.push('mostly men, women\'s team');
+  }
+  return out;
+}
+
+/* The one line the desk sees next to the photo, e.g. "11 faces (7 men, 4 women) · CHECK: mostly women, men's team". */
+function photoNoteText(check, divisions) {
+  var a = photoAdvice(check, divisions);
+  return nOf_(check.faces, 'face', 'faces') + ' (' + nOf_(check.men, 'man', 'men') + ', ' + nOf_(check.women, 'woman', 'women') + ')' + (a.short.length ? ' · CHECK: ' + a.short.join('; ') : '');
+}
+
 </script>
 <script>
 (function () {
@@ -221,6 +252,8 @@ function call(fn, arg, ms, tries) {
     if (c.hasPhoto) {
       var img = el('img', 'photo'); img.alt = c.company + ' team photo'; img.style.marginTop = '14px'; card.appendChild(img);
       card.appendChild(el('p', 'small muted', 'Tap to enlarge. Check it’s this team, at the ceremony, with their flag.')).style.margin = '6px 0 0';
+      // the captain's phone counted faces on this photo: a rough estimate, only a hint — you decide
+      if (c.status !== 'cancelled' && c.note) card.appendChild(el('p', /CHECK:/.test(c.note) ? 'note warn' : 'small muted', c.note)).style.marginTop = '8px';
       desk('admin_photo', { code: c.code }).then(function (r) {
         if (r.ok) { img.src = 'data:' + r.mime + ';base64,' + r.b64; img.onclick = function () { lightbox(img.src); }; }
         else { img.replaceWith(note('bad', r.error)); }
@@ -282,7 +315,7 @@ function call(fn, arg, ms, tries) {
         list.textContent = ''; var t = q.value.trim().toLowerCase(), n = 0;
         r.claims.filter(function (c) { return (filterBy === 'all' || c.status === filterBy) && (!t || c.company.toLowerCase().indexOf(t) >= 0 || c.code.toLowerCase().indexOf(t) >= 0); }).forEach(function (c) {
           n++; var it = el('button', 'item'); it.type = 'button'; var g = el('div', 'grow'); g.appendChild(el('div', 'strong', c.company));
-          g.appendChild(el('div', 'small muted', c.teamLabels.join(' + ') + ' · ' + c.total + ' shirts · ' + c.created.slice(5, 16)));
+          g.appendChild(el('div', 'small muted', c.teamLabels.join(' + ') + ' · ' + c.total + ' shirts · ' + c.created.slice(5, 16) + (c.flagged ? ' · photo check flagged' : '')));
           it.appendChild(g); it.appendChild(el('span', 'c', c.code)); it.appendChild(badge(c.status));
           it.onclick = function () { tab('find'); $('code').value = c.code; find(c.code); }; list.appendChild(it);
         });

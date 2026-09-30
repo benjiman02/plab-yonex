@@ -165,6 +165,37 @@ function call(fn, arg, ms, tries) {
   });
 }
 
+/* ---- the quick photo check's advice (pure, so it is tested on its own) ----
+   `check` = { faces, men, women } as counted ON THE PHONE by the small face model; `divisions` = the divisions of the teams
+   being claimed (['mens'], ['womens'], or both). The estimate is rough, so this only ever WARNS — it never blocks a claim.
+   Returns { line: what to tell the captain, warnings: [longer texts], short: [phrases for the desk's one-line note] }. */
+function nOf_(x, one, many) { return x + ' ' + (x === 1 ? one : many); }
+function photoAdvice(check, divisions) {
+  var f = check.faces, m = check.men, w = check.women, out = { line: '', warnings: [], short: [] }, n = nOf_;
+  var mens = divisions.indexOf('mens') >= 0, womens = divisions.indexOf('womens') >= 0;
+  if (f > 0) out.line = 'We can see about ' + n(f, 'person', 'people') + ' (' + n(m, 'man', 'men') + ', ' + n(w, 'woman', 'women') + '). This is only a rough estimate.';
+  if (f === 0) {
+    out.warnings.push('We couldn’t spot any faces in this photo. Make sure your whole team is in the shot, facing the camera, with your company flag.');
+    out.short.push('no faces found');
+  } else if (f < 3) {
+    out.warnings.push('We can only see ' + n(f, 'face', 'faces') + '. Is your whole team in the photo?');
+    out.short.push('only ' + n(f, 'face', 'faces'));
+  } else if (mens && !womens && w > m) {
+    out.warnings.push('This looks like mostly women, but you picked a men’s team.');
+    out.short.push('mostly women, men\'s team');
+  } else if (womens && !mens && m > w) {
+    out.warnings.push('This looks like mostly men, but you picked a women’s team.');
+    out.short.push('mostly men, women\'s team');
+  }
+  return out;
+}
+
+/* The one line the desk sees next to the photo, e.g. "11 faces (7 men, 4 women) · CHECK: mostly women, men's team". */
+function photoNoteText(check, divisions) {
+  var a = photoAdvice(check, divisions);
+  return nOf_(check.faces, 'face', 'faces') + ' (' + nOf_(check.men, 'man', 'men') + ', ' + nOf_(check.women, 'woman', 'women') + ')' + (a.short.length ? ' · CHECK: ' + a.short.join('; ') : '');
+}
+
 </script>
 <script>
 var COMPANIES = ["Agilent","Ambest","AMBU","AMD","Amphenol","Analog Devices","ASE Electronics","B.Braun","Bizlink","Broadcom","Bruker","Chipbond Technology","Coherent","Dell","Dexcom","Dufu Technology","Efinix Technology","Emerson","Flex","GUH","HP","Infineon","Intel","Jabil","Keysight","KMWE","Knowles","Kyocera AVX","Lam Research","Microchip","Micron","Motorola","Osram","Pentamaster","Pixart","Plexus","Renesas","SAM","Sandisk","Sanmina","Stratus Automation","Tecan","TF-AMD","VAT","Vitrox"];
@@ -328,7 +359,7 @@ var COMPANY_LABELS = {"Analog Devices":"Analog Devices (ADI)","Efinix Technology
     var p = el('p', 'muted small'); p.style.margin = '4px 0 0';
     p.appendChild(document.createTextNode('The shirts are free — the photo is how you pay for them. Take a group shot of your team at the opening ceremony '));
     p.appendChild(el('strong', null, 'with your company flag'));
-    p.appendChild(document.createTextNode(', then add it here.' + (S.data.teams.length > 1 ? ' Claiming for more than one team? One shot of everyone together is fine — or each team can claim separately with its own photo.' : '') + ' Only GP Sports staff at the counter will see it, and only to check your claim.'));
+    p.appendChild(document.createTextNode(', then add it here.' + (S.data.teams.length > 1 ? ' Claiming for more than one team? One shot of everyone together is fine — or each team can claim separately with its own photo.' : '') + ' Only GP Sports staff at the counter will see it, and only to check your claim. Your phone also runs a quick face check on it: nothing is uploaded for that, and it never stops you claiming.'));
     sec.appendChild(p);
     var box = el('div', 'photobox'); box.id = 'photobox'; sec.appendChild(box);
     fillPhotoBox(box);
@@ -345,6 +376,7 @@ var COMPANY_LABELS = {"Analog Devices":"Analog Devices (ADI)","Efinix Technology
     if (S.photo) {
       var img = el('img'); img.alt = 'Your team photo'; img.src = S.photo.preview; box.appendChild(img);
       var l = el('label', 'retake', 'Retake'); l.appendChild(fileInput()); box.appendChild(l);
+      box.appendChild(checkBlock());
     } else if (S.amend) {
       var q = el('p', 'muted'); q.style.margin = '0'; q.appendChild(document.createTextNode('Keeping the photo you already sent. '));
       var r = el('label', 'linklike', 'Replace it'); r.appendChild(fileInput()); q.appendChild(r); box.appendChild(q);
@@ -371,8 +403,69 @@ var COMPANY_LABELS = {"Analog Devices":"Analog Devices (ADI)","Efinix Technology
         changed();
       } catch (e) { return fail(); }
       URL.revokeObjectURL(url); S.photoBusy = false; fillPhotoBox(); updateBar();
+      startCheck(c);
     };
     img.src = url;
+  }
+
+  // ---------- quick photo check: faces + a men/women estimate, on THIS phone only ----------
+  // A small open-source model (face-api, hosted next to this page in vendor/) counts the faces and guesses men/women. Nothing is
+  // uploaded for it. It is an estimate, so it only WARNS: the Confirm button never depends on it, and if it can't run (old phone,
+  // slow data) the claim carries on without it. The desk gets a one-line note next to the photo.
+  var faceLib = null;
+  function loadFaceLib() {
+    if (faceLib) return faceLib;
+    faceLib = new Promise(function (ok, no) {
+      var s = document.createElement('script'); s.src = 'vendor/face-api.js'; s.async = true;
+      s.onload = function () { window.faceapi ? ok(window.faceapi) : no(new Error('face library missing')); };
+      s.onerror = function () { no(new Error('face library did not load')); };
+      document.head.appendChild(s);
+    }).then(function (f) {
+      return f.tf.setBackend('webgl').then(function (good) { return good ? true : f.tf.setBackend('cpu'); }, function () { return f.tf.setBackend('cpu'); })
+        .then(function () { return f.tf.ready(); })
+        .then(function () { return Promise.all([f.nets.tinyFaceDetector.loadFromUri('vendor/models'), f.nets.ageGenderNet.loadFromUri('vendor/models')]); })
+        .then(function () { return f; });
+    });
+    faceLib.catch(function () { faceLib = null; });   // a failed load may be tried again with the next photo
+    return faceLib;
+  }
+  function checkPhoto(canvas) {
+    var run = loadFaceLib().then(function (f) {
+      return f.detectAllFaces(canvas, new f.TinyFaceDetectorOptions({ inputSize: 608, scoreThreshold: 0.4 })).withAgeAndGender();
+    }).then(function (found) {
+      var men = 0, women = 0; found.forEach(function (r) { if (r.gender === 'male') men++; else women++; });
+      return { faces: found.length, men: men, women: women };
+    });
+    var slow = new Promise(function (ok, no) { setTimeout(function () { no(new Error('the check took too long')); }, 25000); });
+    return Promise.race([run, slow]);
+  }
+  function startCheck(canvas) {
+    var mine = S.photo; if (!mine) return;
+    mine.check = { state: 'running' }; fillPhotoBox();
+    checkPhoto(canvas).then(function (r) {
+      if (S.photo !== mine) return;   // a newer photo replaced this one while it was being checked
+      mine.check = { state: 'done', faces: r.faces, men: r.men, women: r.women }; fillPhotoBox(); updateBar();
+    }, function () {
+      if (S.photo !== mine) return;
+      mine.check = { state: 'failed' }; fillPhotoBox(); updateBar();
+    });
+  }
+  function pickedDivisions() { var d = []; pickedTeams().forEach(function (t) { if (d.indexOf(t.division) < 0) d.push(t.division); }); return d; }
+  function checkBlock() {
+    var wrap = el('div', 'stack'), ck = S.photo && S.photo.check; wrap.style.marginTop = '10px';
+    if (!ck || ck.state === 'running') { wrap.appendChild(el('p', 'muted small', 'Checking the photo…')); return wrap; }
+    if (ck.state === 'failed') { wrap.appendChild(el('p', 'muted small', 'The quick photo check isn’t available on this phone. No problem: GP Sports staff will look at your photo at the counter.')); return wrap; }
+    var a = photoAdvice(ck, pickedDivisions());
+    if (a.line) wrap.appendChild(el('p', 'muted small', a.line));
+    a.warnings.forEach(function (w) { wrap.appendChild(note('warn', w)); });
+    if (a.warnings.length) wrap.appendChild(el('p', 'muted small', 'You can still confirm. GP Sports staff will check the photo at the counter.'));
+    return wrap;
+  }
+  function checkNote() {   // what the desk is told, in one line
+    var ck = S.photo && S.photo.check;
+    if (!ck || ck.state === 'running') return 'not finished on the phone';
+    if (ck.state === 'failed') return 'not run (this phone could not do it)';
+    return photoNoteText(ck, pickedDivisions());
   }
 
   function othersSection(list) {
@@ -416,6 +509,7 @@ var COMPANY_LABELS = {"Analog Devices":"Analog Devices (ADI)","Efinix Technology
     if (!S.requestId) S.requestId = uuid();
     var snapshot = { teams: pickedTeams().map(function (t) { return t.label; }), lines: S.data.stock.filter(function (r) { return S.qty[r.key] > 0; }).map(function (r) { return { design: r.design, size: r.size, qty: S.qty[r.key] }; }) };
     var req = who(); req.requestId = S.requestId; req.teamKeys = keys; req.lines = lines; req.amendCode = S.amend || null; req.photo = S.photo ? { mime: S.photo.mime, b64: S.photo.b64 } : null;
+    if (S.photo) req.photoCheck = checkNote();   // (only with a NEW photo: an unchanged photo keeps the note it already has)
     S.busy = true; S.error = ''; updateBar();
     call('api_claim', req, 90000).then(function (res) {
       S.busy = false;
