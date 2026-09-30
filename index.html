@@ -54,6 +54,11 @@ input[type=text], input[type=password], input[type=search] {
   border: 1.5px solid var(--line); border-radius: 12px; appearance: none;
 }
 input:focus { outline: 3px solid color-mix(in srgb, var(--brand) 30%, transparent); border-color: var(--brand); }
+select {
+  width: 100%; height: 50px; padding: 0 12px; font: inherit; font-size: 16px; font-weight: 600; color: var(--ink); background: var(--bg);
+  border: 1.5px solid var(--line); border-radius: 12px;
+}
+select:focus { outline: 3px solid color-mix(in srgb, var(--brand) 30%, transparent); border-color: var(--brand); }
 label.lbl { display: block; margin: 0 0 6px; font-size: 14px; font-weight: 600; }
 
 .note { padding: 11px 13px; border-radius: 12px; background: var(--brand-soft); font-size: 14px; }
@@ -117,6 +122,10 @@ table.sum td:last-child { text-align: right; font-family: ui-monospace, Menlo, m
     <h1 id="title">Claim your shirts</h1>
     <p id="sub">Your team photo gets you the exclusive P.LAB Yonex shirts.</p>
   </header>
+  <section class="card" id="picker" hidden style="margin-top:14px">
+    <label class="lbl" for="company">Your company</label>
+    <select id="company"></select>
+  </section>
   <div id="view"><p class="center muted" style="margin-top:30px"><span class="spin"></span>Loading…</p></div>
 </main>
 
@@ -158,8 +167,12 @@ function call(fn, arg, ms, tries) {
 
 </script>
 <script>
+var COMPANIES = ["Agilent","Ambest","AMBU","AMD","Amphenol","Analog Devices","ASE Electronics","B.Braun","Bizlink","Broadcom","Bruker","Chipbond Technology","Coherent","Dell","Dexcom","Dufu Technology","Efinix Technology","Emerson","Flex","GUH","HP","Infineon","Intel","Jabil","Keysight","KMWE","Knowles","Kyocera AVX","Lam Research","Microchip","Micron","Motorola","Osram","Pentamaster","Pixart","Plexus","Renesas","SAM","Sandisk","Sanmina","Stratus Automation","Tecan","TF-AMD","VAT","Vitrox"];
+var COMPANY_LABELS = {"Analog Devices":"Analog Devices (ADI)","Efinix Technology":"Efinix Technology (Efinix)","Pixart":"Pixart (PixArt Imaging)","Stratus Automation":"Stratus Automation (Stratus)"};
+</script>
+<script>
 (function () {
-  var S = { token: '', data: null, picked: {}, qty: {}, photo: null, photoBusy: false, amend: '', busy: false, requestId: '', error: '', done: null, refs: [] };
+  var S = { token: '', company: '', data: null, picked: {}, qty: {}, photo: null, photoBusy: false, amend: '', busy: false, requestId: '', error: '', done: null, refs: [] };
   var SWATCH = { 'Black Print': 'linear-gradient(135deg,#1a1a1a 0%,#1a1a1a 55%,#c8e63c 55%,#1a1a1a 100%)', 'Navy Peony': '#1f2f4d', 'Jet Black': '#111111' };
 
   // ---------- small helpers ----------
@@ -183,12 +196,14 @@ function call(fn, arg, ms, tries) {
   // ---------- load ----------
   function load(quiet) {
     if (!quiet) { view().appendChild(el('p', 'center muted', 'Loading…')); showBar(false); }
-    return call('api_company', { token: S.token }, 40000, 2).then(function (res) {
+    var asked = JSON.stringify(who());   // if the captain switches company while this is loading, the late answer is dropped
+    return call('api_company', who(), 40000, 2).then(function (res) {
+      if (JSON.stringify(who()) !== asked) return false;
       if (!res.ok) { if (!quiet) (res.kind === 'not_found' ? invalid(res.error) : retry(res.error)); return false; }
       S.data = res; $('title').textContent = res.company.name; document.title = res.company.name + ' – Yonex bonus shirt';
       clamp();
       return true;
-    }, function () { if (!quiet) retry("Couldn't load. Check your connection and try again."); return false; });
+    }, function () { if (JSON.stringify(who()) === asked && !quiet) retry("Couldn't load. Check your connection and try again."); return false; });
   }
   function invalid(msg) {
     var v = view(); showBar(false);
@@ -200,7 +215,7 @@ function call(fn, arg, ms, tries) {
   function retry(msg) {
     var v = view(), c = el('div', 'card stack'); showBar(false);
     c.appendChild(el('p', null, msg));
-    var b = el('button', 'btn', 'Try again'); b.type = 'button'; b.onclick = function () { start(); }; c.appendChild(b);
+    var b = el('button', 'btn', 'Try again'); b.type = 'button'; b.onclick = function () { reload(); }; c.appendChild(b);
     v.appendChild(c); c.style.marginTop = '20px';
   }
   // stock may have moved under us: never keep more than is left
@@ -400,7 +415,7 @@ function call(fn, arg, ms, tries) {
     var lines = Object.keys(S.qty).filter(function (k) { return S.qty[k] > 0; }).map(function (k) { return { stockKey: k, qty: S.qty[k] }; });
     if (!S.requestId) S.requestId = uuid();
     var snapshot = { teams: pickedTeams().map(function (t) { return t.label; }), lines: S.data.stock.filter(function (r) { return S.qty[r.key] > 0; }).map(function (r) { return { design: r.design, size: r.size, qty: S.qty[r.key] }; }) };
-    var req = { token: S.token, requestId: S.requestId, teamKeys: keys, lines: lines, amendCode: S.amend || null, photo: S.photo ? { mime: S.photo.mime, b64: S.photo.b64 } : null };
+    var req = who(); req.requestId = S.requestId; req.teamKeys = keys; req.lines = lines; req.amendCode = S.amend || null; req.photo = S.photo ? { mime: S.photo.mime, b64: S.photo.b64 } : null;
     S.busy = true; S.error = ''; updateBar();
     call('api_claim', req, 90000).then(function (res) {
       S.busy = false;
@@ -444,11 +459,34 @@ function call(fn, arg, ms, tries) {
   }
 
   // ---------- go ----------
+  // Everyone opens the same link and picks their company from the list. An earlier private link (…?c=<token>) still works.
+  function who() { return S.token ? { token: S.token } : { company: S.company }; }
   function start() {
     S.token = new URLSearchParams(location.search).get('c') || '';
-    if (!S.token) return invalid('This page needs your company’s personal link. Please ask GP Sports to send it to you again.');
+    if (S.token) { $('picker').hidden = true; return reload(); }
+    setupPicker(); reload();
+  }
+  function reload() {
+    if (!S.token && !S.company) return prompt_();
     load().then(function (ok) { if (ok) render(); });
   }
+  function setupPicker() {
+    var sel = $('company'); $('picker').hidden = false;
+    if (!sel.options.length) {
+      sel.appendChild(new Option('Choose your company…', ''));
+      COMPANIES.forEach(function (n) { sel.appendChild(new Option(COMPANY_LABELS[n] || n, n)); });
+      sel.onchange = function () { pick(sel.value); };
+    }
+    var saved = ''; try { saved = localStorage.getItem('yx-company') || ''; } catch (e) {}   // this phone remembers the last company picked
+    if (!S.company && COMPANIES.indexOf(saved) >= 0) S.company = saved;
+    sel.value = S.company;
+  }
+  function pick(name) {
+    S.company = name; try { localStorage.setItem('yx-company', name); } catch (e) {}
+    resetForm(); S.data = null; $('title').textContent = 'Claim your shirts'; document.title = 'Yonex bonus shirt – FTZ P.LAB Cup 2026';
+    reload();
+  }
+  function prompt_() { showBar(false); view().appendChild(el('p', 'center muted', 'Choose your company above to start.')).style.marginTop = '28px'; }
   $('go').onclick = submit;
   document.addEventListener('visibilitychange', function () {
     if (document.hidden || !S.data || S.busy || S.photoBusy || S.done) return;
