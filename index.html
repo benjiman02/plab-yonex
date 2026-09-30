@@ -229,9 +229,13 @@ function call(fn, arg, ms) {
   }
 
   function teamsSection() {
-    var sec = el('section', 'sec');
-    sec.appendChild(el('h2', null, '1. Which team are you collecting for?'));
-    sec.appendChild(el('p', 'muted small', 'Tick one or both. If your colleague already claimed the other team, that’s fine — just take yours.')).style.margin = '4px 0 12px';
+    var sec = el('section', 'sec'), n = S.data.teams.length;
+    // Companies field 1 to 4 teams (a second squad in a division is common), so the wording follows the count.
+    var hint = n === 1 ? 'Tick your team to continue.'
+      : n === 2 ? 'Tick one or both. If a colleague already claimed the other team, that’s fine — just take yours.'
+      : 'Tick every team you’re collecting for. Several together is fine, or each team’s captain can claim their own on this same link. A team a colleague has already claimed is greyed out.';
+    sec.appendChild(el('h2', null, n === 1 ? '1. Your team' : '1. Which teams are you collecting for?'));
+    sec.appendChild(el('p', 'muted small', hint)).style.margin = '4px 0 12px';
     var grid = el('div', 'stack');
     S.data.teams.forEach(function (t) {
       var on = !!S.picked[t.key], locked = !!t.claimedBy && !on;
@@ -300,7 +304,7 @@ function call(fn, arg, ms) {
     var p = el('p', 'muted small'); p.style.margin = '4px 0 0';
     p.appendChild(document.createTextNode('The shirts are free — the photo is how you pay for them. Take a group shot of your team at the opening ceremony '));
     p.appendChild(el('strong', null, 'with your company flag'));
-    p.appendChild(document.createTextNode(', then add it here. Claiming for both teams? One shot of everyone together is fine. Only GP Sports staff at the counter will see it, and only to check your claim.'));
+    p.appendChild(document.createTextNode(', then add it here.' + (S.data.teams.length > 1 ? ' Claiming for more than one team? One shot of everyone together is fine — or each team can claim separately with its own photo.' : '') + ' Only GP Sports staff at the counter will see it, and only to check your claim.'));
     sec.appendChild(p);
     var box = el('div', 'photobox'); box.id = 'photobox'; sec.appendChild(box);
     fillPhotoBox(box);
