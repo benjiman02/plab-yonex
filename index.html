@@ -220,6 +220,22 @@ var COMPANY_LABELS = {"Analog Devices":"Analog Devices (ADI)","Efinix Technology
   }
   function headroom(row) { return row.available + (held()[row.key] || 0); }   // what this claim already holds is free for it to keep
   function photoOk() { return !!S.photo || !!S.amend; }
+  // The headcount rule: the photo's people decide how many shirts can be claimed (never more than the team allowance).
+  // faces() = how many people the phone counted, or null when nobody has counted (the check could not run, or an older claim has no count).
+  function faces() {
+    if (S.photo) return S.photo.check && S.photo.check.state === 'done' ? S.photo.check.faces : null;
+    var c = S.amend && S.data.claims.filter(function (x) { return x.code === S.amend; })[0];
+    return c && typeof c.faces === 'number' ? c.faces : null;
+  }
+  function heldTotal() { var h = held(); return Object.keys(h).reduce(function (a, k) { return a + h[k]; }, 0); }
+  // How many shirts may be picked. Keeping the old photo never takes away shirts the claim already holds; a new photo is counted afresh.
+  function cap() {
+    var e = ent(), f = faces();
+    if (f == null) return e;
+    return Math.max(Math.min(e, f), S.photo ? 0 : heldTotal());
+  }
+  // The photo comes first: the next steps show once it is counted (or the count could not be made). Changing a claim keeps its photo.
+  function photoReady() { return S.photo ? !!S.photo.check && S.photo.check.state !== 'running' : !!S.amend; }
   function isOpen() { return S.data.open !== false; }
   function view() { var v = $('view'); v.textContent = ''; return v; }
   function showBar(on) { $('bar').hidden = !on; $('wrap').className = 'wrap' + (on ? ' has-bar' : ''); }
@@ -265,12 +281,17 @@ var COMPANY_LABELS = {"Analog Devices":"Analog Devices (ADI)","Efinix Technology
     var y = window.scrollY, v = view(); S.refs = [];
     if (!isOpen()) v.appendChild(note('warn', 'Claiming is closed right now. If you think it should be open, please see the GP Sports team.'));
     if (S.amend) v.appendChild(amendBanner());
-    v.appendChild(teamsSection());
-    if (anyPicked()) { v.appendChild(shirtsSection()); v.appendChild(photoSection()); }
-    else v.appendChild(el('p', 'muted small center', 'Pick a team above to continue.')).style.marginTop = '28px';
+    v.appendChild(photoSection());   // step 1: the photo, and the headcount from it
+    var ready = photoReady(), empty = ready && !!S.photo && faces() === 0;   // empty: nobody was counted, so there is nothing to claim yet
+    if (!ready || empty) v.appendChild(el('p', 'muted small center', empty ? 'Retake your photo to continue.' : S.photo ? 'Counting the people in your photo…' : 'Add your team photo to continue.')).style.marginTop = '28px';
+    else {
+      v.appendChild(teamsSection());   // step 2
+      if (anyPicked()) v.appendChild(shirtsSection());   // step 3: capped by the headcount
+      else v.appendChild(el('p', 'muted small center', 'Pick a team above to continue.')).style.marginTop = '28px';
+    }
     var others = S.data.claims.filter(function (c) { return c.code !== S.amend; });
     if (others.length) v.appendChild(othersSection(others));
-    showBar(anyPicked()); updateShirts(); updateBar();
+    showBar(ready && !empty && anyPicked()); updateShirts(); updateBar();
     window.scrollTo(0, y);
   }
 
@@ -289,7 +310,7 @@ var COMPANY_LABELS = {"Analog Devices":"Analog Devices (ADI)","Efinix Technology
     var hint = n === 1 ? 'Tick your team to continue.'
       : n === 2 ? 'Tick one or both. If a colleague already claimed the other team, that’s fine — just take yours.'
       : 'Tick every team you’re collecting for. Several together is fine, or each team’s captain can claim their own on this same link. A team a colleague has already claimed is greyed out.';
-    sec.appendChild(el('h2', null, n === 1 ? '1. Your team' : '1. Which teams are you collecting for?'));
+    sec.appendChild(el('h2', null, n === 1 ? '2. Your team' : '2. Which teams are you collecting for?'));
     sec.appendChild(el('p', 'muted small', hint)).style.margin = '4px 0 12px';
     var grid = el('div', 'stack');
     S.data.teams.forEach(function (t) {
@@ -309,8 +330,11 @@ var COMPANY_LABELS = {"Analog Devices":"Analog Devices (ADI)","Efinix Technology
 
   function shirtsSection() {
     var sec = el('section', 'sec');
-    sec.appendChild(el('h2', null, '2. Choose ' + ent() + ' shirts'));
-    sec.appendChild(el('p', 'muted small', 'Designs are limited and shared across all 75 teams — this is live stock, first come first served. You can change your picks until you collect.')).style.margin = '4px 0 12px';
+    var e = ent(), c = cap(), f = faces();
+    sec.appendChild(el('h2', null, '3. Choose ' + (c < e ? 'up to ' : '') + c + ' shirt' + (c === 1 ? '' : 's')));
+    var help = 'Designs are limited and shared across all 75 teams — this is live stock, first come first served. You can change your picks until you collect.';
+    if (c < e && f != null) help = 'Your photo shows ' + f + (f === 1 ? ' person' : ' people') + ', so that is how many shirts you can claim (your team allowance is ' + e + '). ' + help;
+    sec.appendChild(el('p', 'muted small', help)).style.margin = '4px 0 12px';
     var wrap = el('div', 'stack');
     S.data.sizes.forEach(function (size) {
       var rows = S.data.stock.filter(function (r) { return r.size === size; });
@@ -336,14 +360,14 @@ var COMPANY_LABELS = {"Analog Devices":"Analog Devices (ADI)","Efinix Technology
   }
 
   function bump(row, d) {
-    var now = S.qty[row.key] || 0, rem = ent() - total();
+    var now = S.qty[row.key] || 0, rem = cap() - total();
     var next = Math.max(0, Math.min(now + d, headroom(row), now + Math.max(0, rem)));
     if (next > 0) S.qty[row.key] = next; else delete S.qty[row.key];
     changed(); updateShirts(); updateBar();
   }
 
   function updateShirts() {
-    var rem = ent() - total();
+    var rem = cap() - total();
     S.refs.forEach(function (r) {
       var n = S.qty[r.row.key] || 0, free = headroom(r.row);
       r.num.textContent = n;
@@ -355,11 +379,11 @@ var COMPANY_LABELS = {"Analog Devices":"Analog Devices (ADI)","Efinix Technology
 
   function photoSection() {
     var sec = el('section', 'sec');
-    sec.appendChild(el('h2', null, '3. Your team photo'));
+    sec.appendChild(el('h2', null, '1. Your team photo'));
     var p = el('p', 'muted small'); p.style.margin = '4px 0 0';
     p.appendChild(document.createTextNode('The shirts are free — the photo is how you pay for them. Take a group shot of your team at the opening ceremony '));
     p.appendChild(el('strong', null, 'with your company flag'));
-    p.appendChild(document.createTextNode(', then add it here.' + (S.data.teams.length > 1 ? ' Claiming for more than one team? One shot of everyone together is fine — or each team can claim separately with its own photo.' : '') + ' GP Sports staff use it at the counter to check your claim. Your phone also runs a quick face check on it: nothing is uploaded for that, and it never stops you claiming.'));
+    p.appendChild(document.createTextNode(', then add it here.' + (S.data.teams.length > 1 ? ' Claiming for more than one team? One shot of everyone together is fine — or each team can claim separately with its own photo.' : '') + ' GP Sports staff use it at the counter to check your claim. Your phone also counts the people in it (nothing is uploaded for that), and you can claim one shirt for each person counted, so get everyone in the shot, facing the camera.'));
     sec.appendChild(p);
     var box = el('div', 'photobox'); box.id = 'photobox'; sec.appendChild(box);
     fillPhotoBox(box);
@@ -378,7 +402,8 @@ var COMPANY_LABELS = {"Analog Devices":"Analog Devices (ADI)","Efinix Technology
       var l = el('label', 'retake', 'Retake'); l.appendChild(fileInput()); box.appendChild(l);
       box.appendChild(checkBlock());
     } else if (S.amend) {
-      var q = el('p', 'muted'); q.style.margin = '0'; q.appendChild(document.createTextNode('Keeping the photo you already sent. '));
+      var kept = faces(), q = el('p', 'muted'); q.style.margin = '0';
+      q.appendChild(document.createTextNode('Keeping the photo you already sent' + (kept != null ? ' (' + kept + (kept === 1 ? ' person' : ' people') + ' counted)' : '') + '. '));
       var r = el('label', 'linklike', 'Replace it'); r.appendChild(fileInput()); q.appendChild(r); box.appendChild(q);
     } else {
       var l2 = el('label', 'pick'); l2.appendChild(document.createTextNode(S.photoBusy ? 'Preparing photo…' : '📷  Add team photo')); l2.appendChild(fileInput()); box.appendChild(l2);
@@ -410,8 +435,9 @@ var COMPANY_LABELS = {"Analog Devices":"Analog Devices (ADI)","Efinix Technology
 
   // ---------- quick photo check: faces + a men/women estimate, on THIS phone only ----------
   // A small open-source model (face-api, hosted next to this page in vendor/) counts the faces and guesses men/women. Nothing is
-  // uploaded for it. It is an estimate, so it only WARNS: the Confirm button never depends on it, and if it can't run (old phone,
-  // slow data) the claim carries on without it. The desk gets a one-line note next to the photo.
+  // uploaded for it. The FACE COUNT caps the shirts (one per person counted, see cap()); the men/women guess only WARNS. If the
+  // count can't be made (old phone, slow data) nothing is capped and the claim carries on as before. The desk gets a one-line note
+  // next to the photo — the same line the server reads the count from.
   var faceLib = null;
   function loadFaceLib() {
     if (faceLib) return faceLib;
@@ -441,24 +467,25 @@ var COMPANY_LABELS = {"Analog Devices":"Analog Devices (ADI)","Efinix Technology
   }
   function startCheck(canvas) {
     var mine = S.photo; if (!mine) return;
-    mine.check = { state: 'running' }; fillPhotoBox();
+    mine.check = { state: 'running' }; render();   // the teams and shirts steps wait for the count
     checkPhoto(canvas).then(function (r) {
       if (S.photo !== mine) return;   // a newer photo replaced this one while it was being checked
-      mine.check = { state: 'done', faces: r.faces, men: r.men, women: r.women }; fillPhotoBox(); updateBar();
+      mine.check = { state: 'done', faces: r.faces, men: r.men, women: r.women }; changed(); render();
     }, function () {
       if (S.photo !== mine) return;
-      mine.check = { state: 'failed' }; fillPhotoBox(); updateBar();
+      mine.check = { state: 'failed' }; changed(); render();
     });
   }
   function pickedDivisions() { var d = []; pickedTeams().forEach(function (t) { if (d.indexOf(t.division) < 0) d.push(t.division); }); return d; }
   function checkBlock() {
     var wrap = el('div', 'stack'), ck = S.photo && S.photo.check; wrap.style.marginTop = '10px';
-    if (!ck || ck.state === 'running') { wrap.appendChild(el('p', 'muted small', 'Checking the photo…')); return wrap; }
-    if (ck.state === 'failed') { wrap.appendChild(el('p', 'muted small', 'The quick photo check isn’t available on this phone. No problem: GP Sports staff will look at your photo at the counter.')); return wrap; }
-    var a = photoAdvice(ck, pickedDivisions());
-    if (a.line) wrap.appendChild(el('p', 'muted small', a.line));
+    if (!ck || ck.state === 'running') { wrap.appendChild(el('p', 'muted small', 'Counting the people in your photo…')); return wrap; }
+    if (ck.state === 'failed') { wrap.appendChild(el('p', 'muted small', 'The quick photo count isn’t available on this phone. No problem: you can go on, and GP Sports staff will look at your photo at the counter.')); return wrap; }
+    var a = photoAdvice(ck, pickedDivisions()), f = ck.faces;
+    if (f > 0) wrap.appendChild(el('p', 'strong', 'We counted ' + f + (f === 1 ? ' person' : ' people') + '. You can claim one shirt per person, up to your team’s allowance.'));
     a.warnings.forEach(function (w) { wrap.appendChild(note('warn', w)); });
-    if (a.warnings.length) wrap.appendChild(el('p', 'muted small', 'You can still confirm. GP Sports staff will check the photo at the counter.'));
+    if (f === 0) wrap.appendChild(el('p', 'muted small', 'Retake the photo to go on: shirts are claimed one per person in it.'));
+    else wrap.appendChild(el('p', 'muted small', 'Someone missing from the count? Retake the photo with everyone in the shot, facing the camera.'));
     return wrap;
   }
   function checkNote() {   // what the desk is told, in one line
@@ -488,9 +515,10 @@ var COMPANY_LABELS = {"Analog Devices":"Analog Devices (ADI)","Efinix Technology
 
   function updateBar() {
     if (!S.data || S.done) return;
-    var t = total(), e = ent(), rem = e - t, ok = false, msg;
+    var t = total(), e = cap(), rem = e - t, ok = false, msg;
     $('barTop').textContent = t + ' of ' + e + ' picked';
     if (S.photoBusy) msg = 'Preparing your photo…';
+    else if (!photoReady()) msg = 'Counting the people in your photo…';
     else if (rem < 0) msg = 'Remove ' + (-rem) + ' shirt' + (rem === -1 ? '' : 's') + ' to continue';
     else if (t === 0) msg = rem + ' still to choose';
     else if (!photoOk()) msg = 'Add your team photo to confirm';
