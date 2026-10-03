@@ -97,14 +97,22 @@ label.lbl { display: block; margin: 0 0 6px; font-size: 14px; font-weight: 600; 
 .price.slashed { text-decoration: line-through; text-decoration-thickness: 2px; text-decoration-color: var(--bad); }
 .free { display: none; padding: 1px 8px; border-radius: 999px; background: var(--brand); color: var(--brand-ink); font-size: 12px; font-weight: 800; letter-spacing: .05em; }
 .free.on { display: inline-block; }
-.deal { margin-top: 12px; padding: 12px 14px; border-radius: 14px; background: var(--brand-soft); border: 1.5px solid var(--brand); }
-.deal .big { font-size: 17px; font-weight: 800; font-variant-numeric: tabular-nums; }
+.deal { margin-top: 12px; padding: 14px 14px 16px; border-radius: 14px; background: var(--brand-soft); border: 1.5px solid var(--brand); text-align: center; }
 .was { color: var(--muted); font-weight: 600; text-decoration: line-through; text-decoration-thickness: 2px; text-decoration-color: var(--bad); }
+.deal .was { display: inline-block; font-size: 26px; font-weight: 800; line-height: 1.1; font-variant-numeric: tabular-nums; text-decoration-thickness: 4px; }
+.deal .freebig { font-size: clamp(60px, 22vw, 92px); font-weight: 900; line-height: .95; letter-spacing: -.02em; color: var(--brand); }
 .yes { color: var(--brand); }
-.deal p { margin: 4px 0 0; }
+.deal p { margin: 6px 0 0; }
 .photobox { margin-top: 12px; padding: 14px; background: var(--card); border: 1.5px solid var(--line); border-radius: 14px; }
 .photobox.ok { border-color: var(--ok); }
 .photobox img { display: block; width: 100%; max-height: 260px; object-fit: cover; border-radius: 10px; }
+.shot { position: relative; }
+.shot svg { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
+.shot .ring { fill: none; vector-effect: non-scaling-stroke; }
+.shot .ring.halo { stroke: rgba(0,0,0,.5); stroke-width: 5px; }
+.shot .ring.hit { stroke: var(--accent); stroke-width: 2.5px; }
+.shot .tag { position: absolute; left: 8px; bottom: 8px; padding: 4px 10px; border-radius: 999px; background: rgba(0,0,0,.66); color: #fff; font-size: 13px; font-weight: 700; }
+.shot .tag .spin { width: 12px; height: 12px; border-width: 2px; margin-right: 6px; vertical-align: -1px; }
 .pick { display: flex; align-items: center; justify-content: center; padding: 30px 10px; border: 2px dashed var(--line); border-radius: 12px; color: var(--brand); font-weight: 700; cursor: pointer; }
 .pick input, .retake input { display: none; }
 .retake { display: inline-block; margin-top: 10px; padding: 8px 16px; border: 1.5px solid var(--line); border-radius: 10px; background: var(--bg); font-size: 14px; font-weight: 600; cursor: pointer; }
@@ -175,41 +183,138 @@ function call(fn, arg, ms, tries) {
   });
 }
 
-/* ---- the quick photo check's advice (pure, so it is tested on its own) ----
-   `check` = { faces, men, women } as counted ON THE PHONE by the small face model; `divisions` = the divisions of the teams
-   being claimed (['mens'], ['womens'], or both). The estimate is rough, so this only ever WARNS — it never blocks a claim.
-   Returns { line: what to tell the captain, warnings: [longer texts], short: [phrases for the desk's one-line note] }. */
+/* ---- the photo check's advice (pure, so it is tested on its own) ----
+   `check` = { faces } as counted ON THE PHONE. The count itself is what limits the shirts (cap() in the page); this only adds a
+   warning when the photo looks wrong for a team photo. (There used to be a men/women guess too. It was dropped on 3 Oct 2026: on
+   test photos it called 17 of 18 players of a women's team "men", and it would have told that team it looked like a men's team.)
+   Returns { warnings: [texts for the captain], short: [phrases for the desk's one-line note] }. */
 function nOf_(x, one, many) { return x + ' ' + (x === 1 ? one : many); }
-function photoAdvice(check, divisions) {
-  var f = check.faces, m = check.men, w = check.women, out = { line: '', warnings: [], short: [] }, n = nOf_;
-  var mens = divisions.indexOf('mens') >= 0, womens = divisions.indexOf('womens') >= 0;
-  if (f > 0) out.line = 'We can see about ' + n(f, 'person', 'people') + ' (' + n(m, 'man', 'men') + ', ' + n(w, 'woman', 'women') + '). This is only a rough estimate.';
+function photoAdvice(check) {
+  var f = check.faces, out = { warnings: [], short: [] };
   if (f === 0) {
     out.warnings.push('We couldn’t spot any faces in this photo. Make sure your whole team is in the shot, facing the camera, with your company flag.');
     out.short.push('no faces found');
   } else if (f < 3) {
-    out.warnings.push('We can only see ' + n(f, 'face', 'faces') + '. Is your whole team in the photo?');
-    out.short.push('only ' + n(f, 'face', 'faces'));
-  } else if (mens && !womens && w > m) {
-    out.warnings.push('This looks like mostly women, but you picked a men’s team.');
-    out.short.push('mostly women, men\'s team');
-  } else if (womens && !mens && m > w) {
-    out.warnings.push('This looks like mostly men, but you picked a women’s team.');
-    out.short.push('mostly men, women\'s team');
+    out.warnings.push('We can only see ' + nOf_(f, 'face', 'faces') + '. Is your whole team in the photo?');
+    out.short.push('only ' + nOf_(f, 'face', 'faces'));
   }
   return out;
 }
 
-/* The one line the desk sees next to the photo, e.g. "11 faces (7 men, 4 women) · CHECK: mostly women, men's team". */
-function photoNoteText(check, divisions) {
-  var a = photoAdvice(check, divisions);
-  return nOf_(check.faces, 'face', 'faces') + ' (' + nOf_(check.men, 'man', 'men') + ', ' + nOf_(check.women, 'woman', 'women') + ')' + (a.short.length ? ' · CHECK: ' + a.short.join('; ') : '');
+/* The one line the desk sees next to the photo, e.g. "11 faces", or "2 faces · CHECK: only 2 faces". The server reads the count
+   from its start (facesFromCheck_ in src/Api.js), so it must keep starting with "<number> face(s)". */
+function photoNoteText(check) {
+  var a = photoAdvice(check);
+  return nOf_(check.faces, 'face', 'faces') + (a.short.length ? ' · CHECK: ' + a.short.join('; ') : '');
 }
 
 </script>
 <script>
 var COMPANIES = ["Agilent","Ambest","AMBU","AMD","Amphenol","Analog Devices","ASE Electronics","B.Braun","Bizlink","Broadcom","Bruker","Chipbond Technology","Coherent","Dell","Dexcom","Dufu Technology","Efinix Technology","Emerson","Flex","GUH","HP","Infineon","Intel","Jabil","Keysight","KMWE","Knowles","Kyocera AVX","Lam Research","Microchip","Micron","Motorola","Osram","Pentamaster","Pixart","Plexus","Renesas","SAM","Sandisk","Sanmina","Stratus Automation","Tecan","TF-AMD","VAT","Vitrox"];
 var COMPANY_LABELS = {"Analog Devices":"Analog Devices (ADI)","Efinix Technology":"Efinix Technology (Efinix)","Pixart":"Pixart (PixArt Imaging)","Stratus Automation":"Stratus Automation (Stratus)"};
+</script>
+<script>
+/* ---- Counting the people in the team photo, ON THE PHONE (nothing is uploaded for it) ----
+   The detector is the SSD MobileNet v1 face detector of @vladmandic/face-api (vendor/). It looks at the whole photo first. When the
+   faces it finds are small for the photo (a wide shot of a big team), it looks again at four overlapping quarters, enlarged, and adds
+   any face it is sure of that it had not seen yet — so a face too small for the first look is still counted, and a face seen twice
+   counts once. A face the detector is unsure of counts only when it is about the size of the faces it IS sure of: that keeps a
+   teammate half-hidden in the back row, and drops someone small walking past in the background (or a face on a phone screen).
+   On 19 test photos with a known count (posed teams of 3 to 18, group selfies, schoolgirls in tudung, empty halls) this counted
+   every one exactly, and 26–27 of a 28-person lineup; the small detector it replaced (TinyFaceDetector) found 0 faces in the 15-,
+   18- and 28-person shots (README, "Photo check").
+   Pure geometry first (tested in Node), then faceCount() — the part that needs the browser. */
+var FACECOUNT = {
+  MIN: 0.3,          // the detector's lowest score that is looked at
+  SURE: 0.5,         // from this score up a face always counts
+  NEAR: 0.45,        // an unsure face counts if it is at least this fraction of the typical sure face's width
+  SMALL: 0.04,       // sure faces narrower than this fraction of the photo's long side (typical) → look at the quarters too
+  OVERLAP: 0.3       // how much neighbouring quarters overlap, so a face cut by one quarter's edge is whole in the next
+};
+
+function fcOverlap(a, b) {   // { iou, iom }: the boxes' intersection over their union, and over the smaller box
+  var x1 = Math.max(a.x, b.x), y1 = Math.max(a.y, b.y), x2 = Math.min(a.x + a.w, b.x + b.w), y2 = Math.min(a.y + a.h, b.y + b.h);
+  var i = Math.max(0, x2 - x1) * Math.max(0, y2 - y1);
+  if (!i) return { iou: 0, iom: 0 };
+  return { iou: i / (a.w * a.h + b.w * b.h - i), iom: i / Math.min(a.w * a.h, b.w * b.h) };
+}
+/* Two boxes are the same face when they overlap well, one sits mostly inside the other, or their centres nearly coincide (the
+   boxes of a small face drift a few pixels between looks, so their overlap alone can be low). Neighbours in a row are a whole
+   face-width apart, so they never pass this. */
+function fcSame(a, b) {
+  var o = fcOverlap(a, b);
+  return o.iou > 0.3 || o.iom > 0.6 ||
+    (Math.abs(a.x + a.w / 2 - b.x - b.w / 2) < 0.5 * Math.max(a.w, b.w) && Math.abs(a.y + a.h / 2 - b.y - b.h / 2) < 0.5 * Math.max(a.h, b.h));
+}
+/* The faces of the first look, plus those of `more` (strongest first) that are not a face already counted. */
+function fcAdd(base, more) {
+  var all = base.slice();
+  more.slice().sort(function (a, b) { return b.score - a.score; }).forEach(function (b) {
+    if (!all.some(function (k) { return fcSame(k, b); })) all.push(b);
+  });
+  return all;
+}
+function fcMedian(xs) { var s = xs.slice().sort(function (a, b) { return a - b; }), n = s.length; return n ? (n % 2 ? s[(n - 1) / 2] : (s[n / 2 - 1] + s[n / 2]) / 2) : 0; }
+/* Unsure faces (MIN ≤ score < SURE) count only when they are about the size of the sure ones. With no sure face at all there is
+   nothing to compare with, so every face found counts: an under-count costs a team shirts, and the desk checks the photo anyway. */
+function fcKeep(boxes) {
+  var sure = boxes.filter(function (b) { return b.score >= FACECOUNT.SURE; });
+  if (!sure.length) return boxes.slice();
+  var ref = fcMedian(sure.map(function (b) { return b.w; }));
+  return boxes.filter(function (b) { return b.score >= FACECOUNT.SURE || b.w >= FACECOUNT.NEAR * ref; });
+}
+/* Look at the quarters too? Only when the first look found faces it is sure of, and they are small for the photo. (A photo with no
+   face at all is not enlarged: that only turns up phantom faces in an empty hall.) */
+function fcNeedsQuarters(boxes, W, H) {
+  var sure = boxes.filter(function (b) { return b.score >= FACECOUNT.SURE; });
+  return sure.length > 0 && fcMedian(sure.map(function (b) { return b.w; })) < FACECOUNT.SMALL * Math.max(W, H);
+}
+/* The four overlapping quarters of a W×H photo, as {x, y, w, h}. */
+function fcQuarters(W, H) {
+  var ov = FACECOUNT.OVERLAP, tw = Math.round(W / (2 - ov)), th = Math.round(H / (2 - ov)), out = [];
+  [0, W - tw].forEach(function (x) { [0, H - th].forEach(function (y) { out.push({ x: x, y: y, w: tw, h: th }); }); });
+  return out;
+}
+/* A face touching a quarter's INNER edge is cut in half there; the overlap means another look sees it whole, so it is left to that one. */
+function fcCut(b, t, W, H) {
+  var m = 2;
+  return (b.x < m && t.x > 0) || (b.y < m && t.y > 0) || (b.x + b.w > t.w - m && t.x + t.w < W) || (b.y + b.h > t.h - m && t.y + t.h < H);
+}
+
+/* Count the faces on a canvas with face-api `f` (its SSD model loaded). → { faces, boxes: [{x, y, w, h, score}], looks }.
+   `quarters === false` skips the second look (a phone without WebGL, where each look takes seconds). */
+function faceCount(f, canvas, quarters) {
+  var W = canvas.width, H = canvas.height, opts = new f.SsdMobilenetv1Options({ minConfidence: FACECOUNT.MIN, maxResults: 300 }), looks = 1;
+  function look(c, t) {
+    return f.detectAllFaces(c, opts).then(function (found) {
+      var out = [];
+      found.forEach(function (d) {
+        var b = { x: d.box.x, y: d.box.y, w: d.box.width, h: d.box.height, score: d.score };
+        if (t && (b.score < FACECOUNT.SURE || fcCut(b, t, W, H))) return;   // a quarter only adds faces it is sure of, and sees whole
+        if (t) { b.x += t.x; b.y += t.y; }
+        out.push(b);
+      });
+      return out;
+    });
+  }
+  return look(canvas, null).then(function (first) {
+    if (quarters === false || !fcNeedsQuarters(first, W, H)) return first;
+    var more = [], chain = Promise.resolve();
+    fcQuarters(W, H).forEach(function (t) {   // one quarter at a time: a phone's GPU memory is small
+      chain = chain.then(function () {
+        var c = document.createElement('canvas'); c.width = t.w; c.height = t.h;
+        c.getContext('2d').drawImage(canvas, t.x, t.y, t.w, t.h, 0, 0, t.w, t.h);
+        looks++;
+        return look(c, t).then(function (found) { more = more.concat(found); });
+      });
+    });
+    return chain.then(function () { return fcAdd(first, more); });
+  }).then(function (all) {
+    var kept = fcKeep(all);
+    return { faces: kept.length, boxes: kept, looks: looks };
+  });
+}
+
 </script>
 <script>
 (function () {
@@ -295,6 +400,7 @@ var COMPANY_LABELS = {"Analog Devices":"Analog Devices (ADI)","Efinix Technology
     if (!isOpen()) v.appendChild(note('warn', 'Claiming is closed right now. If you think it should be open, please see the GP Sports team.'));
     if (S.amend) v.appendChild(amendBanner());
     v.appendChild(photoSection());   // step 1: the photo, and the headcount from it
+    if (isOpen() && (S.amend || S.data.teams.some(function (t) { return !t.claimedBy; }))) prepareFaceLib();   // a photo may be coming: get the counter ready
     var ready = photoReady(), empty = ready && !!S.photo && faces() === 0;   // empty: nobody was counted, so there is nothing to claim yet
     if (!ready || empty) v.appendChild(el('p', 'muted small center', empty ? 'Retake your photo to continue.' : S.photo ? 'Counting the people in your photo…' : 'Add your team photo to continue.')).style.marginTop = '28px';
     else {
@@ -367,7 +473,7 @@ var COMPANY_LABELS = {"Analog Devices":"Analog Devices (ADI)","Efinix Technology
     return sec;
   }
 
-  // The price note above the sizes: before anything is picked it shows what a shirt costs; once shirts are picked the total is slashed to FREE.
+  // The price note above the sizes: RM49.90 is already slashed and FREE! is written big. Once shirts are picked, the slashed price is their total.
   function dealBanner() {
     var box = el('div', 'deal'); S.deal = { box: box };
     return box;
@@ -375,14 +481,11 @@ var COMPANY_LABELS = {"Analog Devices":"Analog Devices (ADI)","Efinix Technology
   function updateDeal() {
     var d = S.deal; if (!d || !d.box.isConnected) return;
     var n = total(), b = d.box; b.textContent = '';
-    if (n === 0) {
-      b.appendChild(el('div', 'big', 'Each shirt is ' + rm(PRICE_CENTS)));
-      b.appendChild(el('p', 'small', 'Pick yours and the price is slashed to FREE. GP Sports, the organiser, has bought these shirts for you.'));
-    } else {
-      var big = el('div', 'big'); big.appendChild(el('span', 'was', rm(n * PRICE_CENTS))); big.appendChild(document.createTextNode(' ')); big.appendChild(el('span', 'yes', 'FREE'));
-      b.appendChild(big);
-      b.appendChild(el('p', 'small', n + (n === 1 ? ' shirt' : ' shirts') + ' at ' + rm(PRICE_CENTS) + ' each. Courtesy of the organiser, GP Sports. We bought these for you.'));
-    }
+    b.appendChild(el('div', 'was', rm((n || 1) * PRICE_CENTS)));
+    b.appendChild(el('div', 'freebig', 'FREE!'));
+    b.appendChild(el('p', 'small', n === 0
+      ? 'Each shirt is ' + rm(PRICE_CENTS) + ' in the shop. GP Sports, the organiser, has bought these shirts for you.'
+      : n + (n === 1 ? ' shirt' : ' shirts') + ' at ' + rm(PRICE_CENTS) + ' each. Courtesy of the organiser, GP Sports. We bought these for you.'));
   }
 
   function bump(size, d) {
@@ -426,9 +529,9 @@ var COMPANY_LABELS = {"Analog Devices":"Analog Devices (ADI)","Efinix Technology
     box = box || $('photobox'); if (!box) return;
     box.textContent = ''; box.className = 'photobox' + (photoOk() ? ' ok' : '');
     if (S.photo) {
-      var img = el('img'); img.alt = 'Your team photo'; img.src = S.photo.preview; box.appendChild(img);
+      box.appendChild(shot(S.photo, S.photoBusy));   // (busy: a new photo is being prepared — the old one's count no longer applies)
       var l = el('label', 'retake', 'Retake'); l.appendChild(fileInput()); box.appendChild(l);
-      box.appendChild(checkBlock());
+      box.appendChild(S.photoBusy ? el('p', 'muted small', 'Preparing your new photo…') : checkBlock());
     } else if (S.amend) {
       var kept = faces(), q = el('p', 'muted'); q.style.margin = '0';
       q.appendChild(document.createTextNode('Keeping the photo you already sent' + (kept != null ? ' (' + kept + (kept === 1 ? ' person' : ' people') + ' counted)' : '') + '. '));
@@ -436,6 +539,35 @@ var COMPANY_LABELS = {"Analog Devices":"Analog Devices (ADI)","Efinix Technology
     } else {
       var l2 = el('label', 'pick'); l2.appendChild(document.createTextNode(S.photoBusy ? 'Preparing photo…' : '📷  Add team photo')); l2.appendChild(fileInput()); box.appendChild(l2);
     }
+  }
+
+  // The photo, with a box on every face that was counted, so the captain sees who is in the count (and who is missing). The box
+  // layer uses the same "cover" fit as the picture, so the boxes stay on the faces however the preview crops it. Drawn on the
+  // page only: the photo that is sent has no boxes. The picture element is made once per photo (decoding it again on every
+  // redraw would make ticking a team stutter on a slow phone).
+  function shot(p, busy) {
+    var wrap = el('div', 'shot'), ck = busy ? null : p.check;
+    if (!p.img) { p.img = el('img'); p.img.alt = 'Your team photo'; p.img.src = p.preview; }
+    wrap.appendChild(p.img);
+    if (ck && ck.state === 'done' && ck.boxes.length) {
+      var NS = 'http://www.w3.org/2000/svg', svg = document.createElementNS(NS, 'svg');
+      svg.setAttribute('viewBox', '0 0 ' + ck.w + ' ' + ck.h); svg.setAttribute('preserveAspectRatio', 'xMidYMid slice'); svg.setAttribute('aria-hidden', 'true');
+      ck.boxes.forEach(function (b) {
+        ['halo', 'hit'].forEach(function (k) {
+          var r = document.createElementNS(NS, 'rect'), pad = b.w * 0.08;
+          r.setAttribute('class', 'ring ' + k); r.setAttribute('x', b.x - pad); r.setAttribute('y', b.y - pad);
+          r.setAttribute('width', b.w + 2 * pad); r.setAttribute('height', b.h + 2 * pad); r.setAttribute('rx', b.w * 0.25);
+          svg.appendChild(r);
+        });
+      });
+      wrap.appendChild(svg);
+    }
+    var tag = el('div', 'tag');
+    if (!ck || ck.state === 'running') { tag.appendChild(el('span', 'spin')); tag.appendChild(document.createTextNode(busy ? 'Preparing photo…' : 'Counting people…')); }
+    else if (ck.state === 'done') tag.textContent = ck.faces + (ck.faces === 1 ? ' person' : ' people');
+    else tag = null;
+    if (tag) wrap.appendChild(tag);
+    return wrap;
   }
 
   // Shrink in the browser before it leaves the phone: the hall will be on crowded mobile data and this upload is mandatory.
@@ -461,12 +593,12 @@ var COMPANY_LABELS = {"Analog Devices":"Analog Devices (ADI)","Efinix Technology
     img.src = url;
   }
 
-  // ---------- quick photo check: faces + a men/women estimate, on THIS phone only ----------
-  // A small open-source model (face-api, hosted next to this page in vendor/) counts the faces and guesses men/women. Nothing is
-  // uploaded for it. The FACE COUNT caps the shirts (one per person counted, see cap()); the men/women guess only WARNS. If the
-  // count can't be made (old phone, slow data) nothing is capped and the claim carries on as before. The desk gets a one-line note
-  // next to the photo — the same line the server reads the count from.
-  var faceLib = null;
+  // ---------- the photo check: count the people in the photo, on THIS phone only ----------
+  // An open-source face detector (face-api's SSD MobileNet, hosted next to this page in vendor/; the counting rules are in
+  // facecount.js) counts the faces. Nothing is uploaded for it. The COUNT caps the shirts (one per person counted, see cap()).
+  // If the count can't be made (old phone, very slow data) nothing is capped and the claim carries on as before. The desk gets a
+  // one-line note next to the photo — the same line the server reads the count from.
+  var faceLib = null, faceLibWanted = false;
   function loadFaceLib() {
     if (faceLib) return faceLib;
     faceLib = new Promise(function (ok, no) {
@@ -477,50 +609,62 @@ var COMPANY_LABELS = {"Analog Devices":"Analog Devices (ADI)","Efinix Technology
     }).then(function (f) {
       return f.tf.setBackend('webgl').then(function (good) { return good ? true : f.tf.setBackend('cpu'); }, function () { return f.tf.setBackend('cpu'); })
         .then(function () { return f.tf.ready(); })
-        .then(function () { return Promise.all([f.nets.tinyFaceDetector.loadFromUri('vendor/models'), f.nets.ageGenderNet.loadFromUri('vendor/models')]); })
+        .then(function () { return f.nets.ssdMobilenetv1.loadFromUri('vendor/models'); })
+        .then(function () {   // one look at a blank square builds the phone's GPU programs now, so the real photo is counted quickly
+          var c = document.createElement('canvas'); c.width = c.height = 64;
+          return faceCount(f, c, false).then(null, function () {});
+        })
         .then(function () { return f; });
     });
     faceLib.catch(function () { faceLib = null; });   // a failed load may be tried again with the next photo
     return faceLib;
   }
+  // Get the counter ready while the captain reads the page and takes the photo: the library and model (about 4 MB, fetched once —
+  // the phone keeps them) come down in the background, so the count is there moments after the photo is. A phone set to save data
+  // waits until a photo is actually added.
+  function prepareFaceLib() {
+    if (faceLibWanted) return; faceLibWanted = true;
+    var net = navigator.connection; if (net && net.saveData) return;
+    setTimeout(function () { loadFaceLib().then(null, function () {}); }, 500);
+  }
   function checkPhoto(canvas) {
-    var run = loadFaceLib().then(function (f) {
-      return f.detectAllFaces(canvas, new f.TinyFaceDetectorOptions({ inputSize: 608, scoreThreshold: 0.4 })).withAgeAndGender();
-    }).then(function (found) {
-      var men = 0, women = 0; found.forEach(function (r) { if (r.gender === 'male') men++; else women++; });
-      return { faces: found.length, men: men, women: women };
-    });
-    var slow = new Promise(function (ok, no) { setTimeout(function () { no(new Error('the check took too long')); }, 25000); });
+    var run = loadFaceLib().then(function (f) { return faceCount(f, canvas, f.tf.getBackend() === 'webgl'); });
+    var slow = new Promise(function (ok, no) { setTimeout(function () { no(new Error('the check took too long')); }, 40000); });
     return Promise.race([run, slow]);
   }
   function startCheck(canvas) {
     var mine = S.photo; if (!mine) return;
     mine.check = { state: 'running' }; render();   // the teams and shirts steps wait for the count
+    var later = setTimeout(function () { if (S.photo === mine && mine.check.state === 'running') { mine.check.slow = true; fillPhotoBox(); } }, 8000);
     checkPhoto(canvas).then(function (r) {
+      clearTimeout(later);
       if (S.photo !== mine) return;   // a newer photo replaced this one while it was being checked
-      mine.check = { state: 'done', faces: r.faces, men: r.men, women: r.women }; changed(); render();
+      mine.check = { state: 'done', faces: r.faces, boxes: r.boxes, w: canvas.width, h: canvas.height }; changed(); render();
     }, function () {
+      clearTimeout(later);
       if (S.photo !== mine) return;
       mine.check = { state: 'failed' }; changed(); render();
     });
   }
-  function pickedDivisions() { var d = []; pickedTeams().forEach(function (t) { if (d.indexOf(t.division) < 0) d.push(t.division); }); return d; }
   function checkBlock() {
     var wrap = el('div', 'stack'), ck = S.photo && S.photo.check; wrap.style.marginTop = '10px';
-    if (!ck || ck.state === 'running') { wrap.appendChild(el('p', 'muted small', 'Counting the people in your photo…')); return wrap; }
+    if (!ck || ck.state === 'running') {
+      wrap.appendChild(el('p', 'muted small', ck && ck.slow ? 'Still counting… The first photo takes longer while your phone fetches the people counter (once). Please keep this page open.' : 'Counting the people in your photo…'));
+      return wrap;
+    }
     if (ck.state === 'failed') { wrap.appendChild(el('p', 'muted small', 'The quick photo count isn’t available on this phone. No problem: you can go on, and GP Sports staff will look at your photo at the counter.')); return wrap; }
-    var a = photoAdvice(ck, pickedDivisions()), f = ck.faces;
+    var a = photoAdvice(ck), f = ck.faces;
     if (f > 0) wrap.appendChild(el('p', 'strong', 'We counted ' + f + (f === 1 ? ' person' : ' people') + '. You can claim one shirt per person, up to your team’s allowance.'));
     a.warnings.forEach(function (w) { wrap.appendChild(note('warn', w)); });
     if (f === 0) wrap.appendChild(el('p', 'muted small', 'Retake the photo to go on: shirts are claimed one per person in it.'));
-    else wrap.appendChild(el('p', 'muted small', 'Someone missing from the count? Retake the photo with everyone in the shot, facing the camera.'));
+    else wrap.appendChild(el('p', 'muted small', 'Everyone counted has a yellow box on the photo. Someone missing? Retake it with everyone in the shot, facing the camera.'));
     return wrap;
   }
   function checkNote() {   // what the desk is told, in one line
     var ck = S.photo && S.photo.check;
     if (!ck || ck.state === 'running') return 'not finished on the phone';
     if (ck.state === 'failed') return 'not run (this phone could not do it)';
-    return photoNoteText(ck, pickedDivisions());
+    return photoNoteText(ck);
   }
 
   function othersSection(list) {

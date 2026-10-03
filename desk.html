@@ -155,35 +155,29 @@ function call(fn, arg, ms, tries) {
   });
 }
 
-/* ---- the quick photo check's advice (pure, so it is tested on its own) ----
-   `check` = { faces, men, women } as counted ON THE PHONE by the small face model; `divisions` = the divisions of the teams
-   being claimed (['mens'], ['womens'], or both). The estimate is rough, so this only ever WARNS — it never blocks a claim.
-   Returns { line: what to tell the captain, warnings: [longer texts], short: [phrases for the desk's one-line note] }. */
+/* ---- the photo check's advice (pure, so it is tested on its own) ----
+   `check` = { faces } as counted ON THE PHONE. The count itself is what limits the shirts (cap() in the page); this only adds a
+   warning when the photo looks wrong for a team photo. (There used to be a men/women guess too. It was dropped on 3 Oct 2026: on
+   test photos it called 17 of 18 players of a women's team "men", and it would have told that team it looked like a men's team.)
+   Returns { warnings: [texts for the captain], short: [phrases for the desk's one-line note] }. */
 function nOf_(x, one, many) { return x + ' ' + (x === 1 ? one : many); }
-function photoAdvice(check, divisions) {
-  var f = check.faces, m = check.men, w = check.women, out = { line: '', warnings: [], short: [] }, n = nOf_;
-  var mens = divisions.indexOf('mens') >= 0, womens = divisions.indexOf('womens') >= 0;
-  if (f > 0) out.line = 'We can see about ' + n(f, 'person', 'people') + ' (' + n(m, 'man', 'men') + ', ' + n(w, 'woman', 'women') + '). This is only a rough estimate.';
+function photoAdvice(check) {
+  var f = check.faces, out = { warnings: [], short: [] };
   if (f === 0) {
     out.warnings.push('We couldn’t spot any faces in this photo. Make sure your whole team is in the shot, facing the camera, with your company flag.');
     out.short.push('no faces found');
   } else if (f < 3) {
-    out.warnings.push('We can only see ' + n(f, 'face', 'faces') + '. Is your whole team in the photo?');
-    out.short.push('only ' + n(f, 'face', 'faces'));
-  } else if (mens && !womens && w > m) {
-    out.warnings.push('This looks like mostly women, but you picked a men’s team.');
-    out.short.push('mostly women, men\'s team');
-  } else if (womens && !mens && m > w) {
-    out.warnings.push('This looks like mostly men, but you picked a women’s team.');
-    out.short.push('mostly men, women\'s team');
+    out.warnings.push('We can only see ' + nOf_(f, 'face', 'faces') + '. Is your whole team in the photo?');
+    out.short.push('only ' + nOf_(f, 'face', 'faces'));
   }
   return out;
 }
 
-/* The one line the desk sees next to the photo, e.g. "11 faces (7 men, 4 women) · CHECK: mostly women, men's team". */
-function photoNoteText(check, divisions) {
-  var a = photoAdvice(check, divisions);
-  return nOf_(check.faces, 'face', 'faces') + ' (' + nOf_(check.men, 'man', 'men') + ', ' + nOf_(check.women, 'woman', 'women') + ')' + (a.short.length ? ' · CHECK: ' + a.short.join('; ') : '');
+/* The one line the desk sees next to the photo, e.g. "11 faces", or "2 faces · CHECK: only 2 faces". The server reads the count
+   from its start (facesFromCheck_ in src/Api.js), so it must keep starting with "<number> face(s)". */
+function photoNoteText(check) {
+  var a = photoAdvice(check);
+  return nOf_(check.faces, 'face', 'faces') + (a.short.length ? ' · CHECK: ' + a.short.join('; ') : '');
 }
 
 </script>
