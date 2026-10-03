@@ -92,6 +92,16 @@ label.lbl { display: block; margin: 0 0 6px; font-size: 14px; font-weight: 600; 
 .step button { width: 40px; height: 40px; border-radius: 10px; border: 1.5px solid var(--line); background: var(--bg); color: var(--ink); font-size: 20px; line-height: 1; cursor: pointer; }
 .step button:disabled { opacity: .3; cursor: not-allowed; }
 .step .n { min-width: 30px; text-align: center; font-size: 17px; font-weight: 700; font-variant-numeric: tabular-nums; }
+.prow { display: flex; align-items: center; gap: 6px; margin-top: 2px; }
+.price { font-size: 13px; font-weight: 600; color: var(--muted); font-variant-numeric: tabular-nums; }
+.price.slashed { text-decoration: line-through; text-decoration-thickness: 2px; text-decoration-color: var(--bad); }
+.free { display: none; padding: 1px 8px; border-radius: 999px; background: var(--brand); color: var(--brand-ink); font-size: 12px; font-weight: 800; letter-spacing: .05em; }
+.free.on { display: inline-block; }
+.deal { margin-top: 12px; padding: 12px 14px; border-radius: 14px; background: var(--brand-soft); border: 1.5px solid var(--brand); }
+.deal .big { font-size: 17px; font-weight: 800; font-variant-numeric: tabular-nums; }
+.was { color: var(--muted); font-weight: 600; text-decoration: line-through; text-decoration-thickness: 2px; text-decoration-color: var(--bad); }
+.yes { color: var(--brand); }
+.deal p { margin: 4px 0 0; }
 .photobox { margin-top: 12px; padding: 14px; background: var(--card); border: 1.5px solid var(--line); border-radius: 14px; }
 .photobox.ok { border-color: var(--ok); }
 .photobox img { display: block; width: 100%; max-height: 260px; object-fit: cover; border-radius: 10px; }
@@ -120,7 +130,7 @@ table.sum td:last-child { text-align: right; font-family: ui-monospace, Menlo, m
     <svg class="court" viewBox="0 0 120 60" aria-hidden="true"><g fill="none" stroke="currentColor" stroke-width="1.6"><rect x="3" y="3" width="114" height="54"/><line x1="60" y1="3" x2="60" y2="57"/><line x1="3" y1="12" x2="117" y2="12"/><line x1="3" y1="48" x2="117" y2="48"/><line x1="24" y1="3" x2="24" y2="57"/><line x1="96" y1="3" x2="96" y2="57"/><line x1="24" y1="30" x2="96" y2="30"/></g></svg>
     <p class="eyebrow">FTZ P.LAB Cup 2026 — Yonex bonus shirt</p>
     <h1 id="title">Claim your shirts</h1>
-    <p id="sub">Your team photo gets you the exclusive P.LAB Yonex shirts.</p>
+    <p id="sub">Exclusive P.LAB Yonex shirts. Each one is RM49.90, and GP Sports, the organiser, is paying for yours.</p>
   </header>
   <section class="card" id="picker" hidden style="margin-top:14px">
     <label class="lbl" for="company">Your company</label>
@@ -203,22 +213,25 @@ var COMPANY_LABELS = {"Analog Devices":"Analog Devices (ADI)","Efinix Technology
 </script>
 <script>
 (function () {
-  var S = { token: '', company: '', data: null, picked: {}, qty: {}, photo: null, photoBusy: false, amend: '', busy: false, requestId: '', error: '', done: null, refs: [] };
-  var SWATCH = { 'Black Print': 'linear-gradient(135deg,#1a1a1a 0%,#1a1a1a 55%,#c8e63c 55%,#1a1a1a 100%)', 'Navy Peony': '#1f2f4d', 'Jet Black': '#111111' };
+  var S = { token: '', company: '', data: null, picked: {}, qty: {}, photo: null, photoBusy: false, deal: null, amend: '', busy: false, requestId: '', error: '', done: null, refs: [] };
 
   // ---------- small helpers ----------
+  var PRICE_CENTS = 4990;   // what one shirt costs in the shop (RM49.90); the captain pays nothing, the organiser does
+  function rm(cents) { return 'RM' + (cents / 100).toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ','); }
   function note(kind, text) { return el('p', 'note ' + kind, text); }
   function changed() { S.requestId = ''; S.error = ''; }   // any edit makes the next Confirm a new request
   function pickedTeams() { return S.data.teams.filter(function (t) { return S.picked[t.key]; }); }
   function anyPicked() { return pickedTeams().length > 0; }
   function ent() { return pickedTeams().reduce(function (a, t) { return a + t.entitlement; }, 0); }
   function total() { return Object.keys(S.qty).reduce(function (a, k) { return a + S.qty[k]; }, 0); }
-  function held() {
+  // The captain picks SIZES only (the server chooses the design), so stock is counted per size: every design of that size together.
+  function held() {   // size -> how many of that size the claim being changed already holds
     var m = {}, c = S.amend && S.data.claims.filter(function (x) { return x.code === S.amend; })[0];
-    if (c) c.lines.forEach(function (l) { m[l.stockKey] = l.qty; });
+    if (c) c.lines.forEach(function (l) { m[l.size] = (m[l.size] || 0) + l.qty; });
     return m;
   }
-  function headroom(row) { return row.available + (held()[row.key] || 0); }   // what this claim already holds is free for it to keep
+  function available(size) { return S.data.stock.filter(function (r) { return r.size === size; }).reduce(function (a, r) { return a + r.available; }, 0); }
+  function headroom(size) { return available(size) + (held()[size] || 0); }   // what this claim already holds is free for it to keep
   function photoOk() { return !!S.photo || !!S.amend; }
   // The headcount rule: the photo's people decide how many shirts can be claimed (never more than the team allowance).
   // faces() = how many people the phone counted, or null when nobody has counted (the check could not run, or an older claim has no count).
@@ -268,9 +281,9 @@ var COMPANY_LABELS = {"Analog Devices":"Analog Devices (ADI)","Efinix Technology
   // stock may have moved under us: never keep more than is left
   function clamp() {
     var trimmed = false;
-    S.data.stock.forEach(function (row) {
-      var n = S.qty[row.key] || 0, max = headroom(row);
-      if (n > max) { if (max > 0) S.qty[row.key] = max; else delete S.qty[row.key]; trimmed = true; }
+    Object.keys(S.qty).forEach(function (size) {
+      var n = S.qty[size] || 0, max = headroom(size);
+      if (n > max) { if (max > 0) S.qty[size] = max; else delete S.qty[size]; trimmed = true; }
     });
     if (trimmed) S.error = 'Some sizes just ran low, so your picks were adjusted. Please check them.';
   }
@@ -332,45 +345,60 @@ var COMPANY_LABELS = {"Analog Devices":"Analog Devices (ADI)","Efinix Technology
     var sec = el('section', 'sec');
     var e = ent(), c = cap(), f = faces();
     sec.appendChild(el('h2', null, '3. Choose ' + (c < e ? 'up to ' : '') + c + ' shirt' + (c === 1 ? '' : 's')));
-    var help = 'Designs are limited and shared across all 75 teams — this is live stock, first come first served. You can change your picks until you collect.';
+    var help = 'Sizes are limited and shared across all 75 teams — this is live stock, first come first served. Just pick your sizes: GP Sports chooses the design for you. You can change your picks until you collect.';
     if (c < e && f != null) help = 'Your photo shows ' + f + (f === 1 ? ' person' : ' people') + ', so that is how many shirts you can claim (your team allowance is ' + e + '). ' + help;
-    sec.appendChild(el('p', 'muted small', help)).style.margin = '4px 0 12px';
+    sec.appendChild(dealBanner());
+    sec.appendChild(el('p', 'muted small', help)).style.margin = '12px 0 12px';
     var wrap = el('div', 'stack');
     S.data.sizes.forEach(function (size) {
-      var rows = S.data.stock.filter(function (r) { return r.size === size; });
-      if (!rows.length) return;
-      var card = el('div', 'sizecard'), h = el('h3', null, size);
-      if (rows.length === 1) h.appendChild(el('span', null, rows[0].design + ' only'));
-      card.appendChild(h);
-      rows.forEach(function (row) {
-        var line = el('div', 'line'), sw = el('span', 'sw'); sw.style.background = SWATCH[row.design] || '#888';
-        var who = el('div', 'grow'); who.appendChild(el('div', 'strong', row.design)); var left = el('div', 'left'); who.appendChild(left);
-        var step = el('div', 'step'), minus = el('button', null, '−'), num = el('span', 'n', '0'), plus = el('button', null, '+');
-        minus.type = plus.type = 'button';
-        minus.setAttribute('aria-label', 'Remove one ' + row.design + ' ' + size); plus.setAttribute('aria-label', 'Add one ' + row.design + ' ' + size);
-        minus.onclick = function () { bump(row, -1); }; plus.onclick = function () { bump(row, 1); };
-        step.appendChild(minus); step.appendChild(num); step.appendChild(plus);
-        line.appendChild(sw); line.appendChild(who); line.appendChild(step); card.appendChild(line);
-        S.refs.push({ row: row, left: left, num: num, minus: minus, plus: plus });
-      });
-      wrap.appendChild(card);
+      if (!S.data.stock.some(function (r) { return r.size === size; })) return;
+      var card = el('div', 'sizecard line');
+      var who = el('div', 'grow'), pr = el('div', 'prow'), price = el('span', 'price', rm(PRICE_CENTS)), tag = el('span', 'free', 'FREE'); pr.appendChild(price); pr.appendChild(tag);
+      who.appendChild(el('div', 'strong sz', 'Size ' + size)); who.appendChild(pr); var left = el('div', 'left'); who.appendChild(left);
+      var step = el('div', 'step'), minus = el('button', null, '−'), num = el('span', 'n', '0'), plus = el('button', null, '+');
+      minus.type = plus.type = 'button';
+      minus.setAttribute('aria-label', 'Remove one size ' + size); plus.setAttribute('aria-label', 'Add one size ' + size);
+      minus.onclick = function () { bump(size, -1); }; plus.onclick = function () { bump(size, 1); };
+      step.appendChild(minus); step.appendChild(num); step.appendChild(plus);
+      card.appendChild(who); card.appendChild(step); wrap.appendChild(card);
+      S.refs.push({ size: size, left: left, num: num, minus: minus, plus: plus, price: price, tag: tag });
     });
     sec.appendChild(wrap);
     return sec;
   }
 
-  function bump(row, d) {
-    var now = S.qty[row.key] || 0, rem = cap() - total();
-    var next = Math.max(0, Math.min(now + d, headroom(row), now + Math.max(0, rem)));
-    if (next > 0) S.qty[row.key] = next; else delete S.qty[row.key];
+  // The price note above the sizes: before anything is picked it shows what a shirt costs; once shirts are picked the total is slashed to FREE.
+  function dealBanner() {
+    var box = el('div', 'deal'); S.deal = { box: box };
+    return box;
+  }
+  function updateDeal() {
+    var d = S.deal; if (!d || !d.box.isConnected) return;
+    var n = total(), b = d.box; b.textContent = '';
+    if (n === 0) {
+      b.appendChild(el('div', 'big', 'Each shirt is ' + rm(PRICE_CENTS)));
+      b.appendChild(el('p', 'small', 'Pick yours and the price is slashed to FREE. GP Sports, the organiser, has bought these shirts for you.'));
+    } else {
+      var big = el('div', 'big'); big.appendChild(el('span', 'was', rm(n * PRICE_CENTS))); big.appendChild(document.createTextNode(' ')); big.appendChild(el('span', 'yes', 'FREE'));
+      b.appendChild(big);
+      b.appendChild(el('p', 'small', n + (n === 1 ? ' shirt' : ' shirts') + ' at ' + rm(PRICE_CENTS) + ' each. Courtesy of the organiser, GP Sports. We bought these for you.'));
+    }
+  }
+
+  function bump(size, d) {
+    var now = S.qty[size] || 0, rem = cap() - total();
+    var next = Math.max(0, Math.min(now + d, headroom(size), now + Math.max(0, rem)));
+    if (next > 0) S.qty[size] = next; else delete S.qty[size];
     changed(); updateShirts(); updateBar();
   }
 
   function updateShirts() {
+    updateDeal();
     var rem = cap() - total();
     S.refs.forEach(function (r) {
-      var n = S.qty[r.row.key] || 0, free = headroom(r.row);
+      var n = S.qty[r.size] || 0, free = headroom(r.size);
       r.num.textContent = n;
+      r.price.className = 'price' + (n > 0 ? ' slashed' : ''); r.tag.className = 'free' + (n > 0 ? ' on' : '');   // picked: the price is slashed and FREE appears
       r.left.textContent = free === 0 ? 'None left' : free + ' left'; r.left.className = 'left' + (free === 0 ? ' none' : '');
       r.minus.disabled = n === 0 || !isOpen();
       r.plus.disabled = n >= free || rem <= 0 || !isOpen();
@@ -533,9 +561,9 @@ var COMPANY_LABELS = {"Analog Devices":"Analog Devices (ADI)","Efinix Technology
   function submit() {
     if (S.busy || S.photoBusy) return;
     var keys = pickedTeams().map(function (t) { return t.key; });
-    var lines = Object.keys(S.qty).filter(function (k) { return S.qty[k] > 0; }).map(function (k) { return { stockKey: k, qty: S.qty[k] }; });
+    var lines = Object.keys(S.qty).filter(function (k) { return S.qty[k] > 0; }).map(function (k) { return { size: k, qty: S.qty[k] }; });
     if (!S.requestId) S.requestId = uuid();
-    var snapshot = { teams: pickedTeams().map(function (t) { return t.label; }), lines: S.data.stock.filter(function (r) { return S.qty[r.key] > 0; }).map(function (r) { return { design: r.design, size: r.size, qty: S.qty[r.key] }; }) };
+    var snapshot = { teams: pickedTeams().map(function (t) { return t.label; }), lines: S.data.sizes.filter(function (z) { return S.qty[z] > 0; }).map(function (z) { return { size: z, qty: S.qty[z] }; }) };
     var req = who(); req.requestId = S.requestId; req.teamKeys = keys; req.lines = lines; req.amendCode = S.amend || null; req.photo = S.photo ? { mime: S.photo.mime, b64: S.photo.b64 } : null;
     if (S.photo) req.photoCheck = checkNote();   // (only with a NEW photo: an unchanged photo keeps the note it already has)
     S.busy = true; S.error = ''; updateBar();
@@ -557,7 +585,7 @@ var COMPANY_LABELS = {"Analog Devices":"Analog Devices (ADI)","Efinix Technology
 
   function startAmend(c) {
     S.amend = c.code; S.picked = {}; c.teamKeys.forEach(function (k) { S.picked[k] = true; });
-    S.qty = {}; c.lines.forEach(function (l) { S.qty[l.stockKey] = l.qty; });
+    S.qty = {}; c.lines.forEach(function (l) { S.qty[l.size] = (S.qty[l.size] || 0) + l.qty; });
     S.photo = null; S.done = null; changed(); render(); window.scrollTo(0, 0);
   }
   function resetForm() { S.amend = ''; S.picked = {}; S.qty = {}; S.photo = null; S.done = null; changed(); }
@@ -569,9 +597,13 @@ var COMPANY_LABELS = {"Analog Devices":"Analog Devices (ADI)","Efinix Technology
     card.appendChild(el('p', 'code', d.code)).style.margin = '8px 0';
     card.appendChild(el('p', 'muted', 'Photo received. Show this code at the GP Sports counter to collect. Screenshot it — you’ll need it to change anything later.'));
     var tb = el('table', 'sum'), body = el('tbody'), n = 0;
-    d.lines.forEach(function (l) { n += l.qty; var tr = el('tr'); tr.appendChild(el('td', null, l.qty + '×')); tr.appendChild(el('td', null, l.design)); tr.appendChild(el('td', null, l.size)); body.appendChild(tr); });
-    var tr2 = el('tr'); tr2.appendChild(el('td', null, n + '×')); var tdt = el('td', null, 'total'); tdt.colSpan = 2; tdt.style.textAlign = 'left'; tdt.style.fontFamily = 'inherit'; tr2.appendChild(tdt); body.appendChild(tr2);
+    d.lines.forEach(function (l) { n += l.qty; var tr = el('tr'); tr.appendChild(el('td', null, l.qty + '×')); tr.appendChild(el('td', null, 'Size ' + l.size)); body.appendChild(tr); });
+    var tr2 = el('tr'); tr2.appendChild(el('td', null, n + '×')); var tdt = el('td', null, 'total'); tdt.style.textAlign = 'left'; tdt.style.fontFamily = 'inherit'; tr2.appendChild(tdt); body.appendChild(tr2);
     tb.appendChild(body); card.appendChild(tb);
+    var worth = el('p', 'small'); worth.style.margin = '12px 0 0';
+    worth.appendChild(document.createTextNode('Worth ')); var was = el('span', 'was', rm(n * PRICE_CENTS)); worth.appendChild(was);
+    worth.appendChild(document.createTextNode(' ')); worth.appendChild(el('strong', 'yes', 'FREE')); worth.appendChild(document.createTextNode(', courtesy of the organiser, GP Sports.'));
+    card.appendChild(worth);
     var mine = S.data.claims.filter(function (c) { return c.code === d.code; })[0];
     var actions = el('div', 'stack'); actions.style.marginTop = '16px';
     if (mine && mine.status !== 'collected' && isOpen()) { var ch = el('button', 'btn ghost', 'Change this claim'); ch.type = 'button'; ch.onclick = function () { startAmend(mine); }; actions.appendChild(ch); }
