@@ -959,9 +959,10 @@ function faceCount(f, canvas, quarters, yn) {
   }
   function pick(name) {
     S.company = name; try { localStorage.setItem('yx-company', name); } catch (e) {}
-    // Another company has other teams and claims, so the teams ticked (and a claim being changed) go. The photo, its count and the
-    // sizes picked stay: a captain who picked the wrong company first does not have to add the photo again.
-    S.amend = ''; S.picked = {}; S.done = null; changed();
+    // Another company has other teams and claims, so the teams ticked go. Part-way through a claim (the wrong company picked first)
+    // the photo, its count and the sizes picked stay, so the captain does not have to add the photo again. But once a claim is made
+    // — or while one is being changed — they belong to that claim: the next company starts afresh, with its own team photo.
+    if (S.done || S.amend) resetForm(); else { S.picked = {}; changed(); }
     S.data = null; $('title').textContent = 'Claim your shirts'; document.title = 'Yonex bonus shirt – FTZ P.LAB Cup 2026';
     reload();
   }
