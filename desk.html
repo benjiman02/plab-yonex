@@ -94,6 +94,26 @@ table.grid td.out { background: var(--bad-soft); color: var(--bad); font-weight:
 table.grid td.na { color: var(--muted); }
 .lightbox { position: fixed; inset: 0; z-index: 20; display: grid; place-items: center; padding: 12px; background: rgba(0,0,0,.88); cursor: zoom-out; }
 .lightbox img { max-width: 100%; max-height: 100%; border-radius: 8px; }
+.chips { display: flex; gap: 6px; flex-wrap: wrap; margin: 4px 0 12px; }
+.chips .tab { flex: none; height: 36px; padding: 0 12px; }
+.dco { margin-top: 12px; }
+.dco h3 { display: flex; justify-content: space-between; gap: 10px; margin: 0 0 8px; font-size: 16px; }
+.dco h3 span { font-size: 13px; font-weight: 600; color: var(--muted); }
+.dcl + .dcl { margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--line); }
+.dcl .what { font-size: 15px; font-weight: 600; }
+.dcl .box { display: none; width: 14px; height: 14px; border: 1.5px solid currentColor; border-radius: 3px; margin-right: 6px; vertical-align: -2px; }
+.printonly { display: none; }
+@media print {
+  :root { --bg: #fff; --card: #fff; --ink: #000; --muted: #444; --line: #bbb; --warn: #6b4300; --warn-soft: #fff4dd; --brand: #0c7a52; }   /* paper: black on white, even from a phone in dark mode */
+  body { background: #fff; color: #000; font-size: 12px; }
+  .hero, .tabs, #p-find, #p-claims, #p-stock, .noprint, #foot { display: none !important; }
+  .wrap { max-width: none; padding: 0; }
+  .card { border: 1px solid #888; border-radius: 6px; padding: 10px; }
+  .dco { break-inside: avoid; }
+  .printonly { display: block; }
+  .dcl .box { display: inline-block; }
+  .note.warn { border: 1px solid #b07a00; }
+}
 </style>
 </head>
 <body>
@@ -101,7 +121,7 @@ table.grid td.na { color: var(--muted); }
   <header class="hero">
     <svg class="court" viewBox="0 0 120 60" aria-hidden="true"><g fill="none" stroke="currentColor" stroke-width="1.6"><rect x="3" y="3" width="114" height="54"/><line x1="60" y1="3" x2="60" y2="57"/><line x1="3" y1="12" x2="117" y2="12"/><line x1="3" y1="48" x2="117" y2="48"/><line x1="24" y1="3" x2="24" y2="57"/><line x1="96" y1="3" x2="96" y2="57"/><line x1="24" y1="30" x2="96" y2="30"/></g></svg>
     <p class="eyebrow">FTZ P.LAB Cup 2026 — GP Sports</p>
-    <h1>Collection desk</h1>
+    <h1>Shirt desk</h1>
     <p>Yonex bonus shirts. Staff only.</p>
   </header>
 
@@ -114,8 +134,9 @@ table.grid td.na { color: var(--muted); }
 
   <div id="app" hidden>
     <div class="tabs" role="tablist">
-      <button class="tab" role="tab" id="t-find" aria-selected="true">Find a code</button>
-      <button class="tab" role="tab" id="t-claims" aria-selected="false">All claims</button>
+      <button class="tab" role="tab" id="t-find" aria-selected="true">Find code</button>
+      <button class="tab" role="tab" id="t-claims" aria-selected="false">Claims</button>
+      <button class="tab" role="tab" id="t-dist" aria-selected="false">Distribute</button>
       <button class="tab" role="tab" id="t-stock" aria-selected="false">Stock</button>
     </div>
     <section id="p-find">
@@ -124,8 +145,9 @@ table.grid td.na { color: var(--muted); }
       <div id="result"></div>
     </section>
     <section id="p-claims" hidden></section>
+    <section id="p-dist" hidden></section>
     <section id="p-stock" hidden></section>
-    <p class="small muted" style="margin-top:28px"><span id="who"></span> <button class="linklike" id="signout" type="button">Sign out</button></p>
+    <p class="small muted" id="foot" style="margin-top:28px"><span id="who"></span> <button class="linklike" id="signout" type="button">Sign out</button></p>
   </div>
 </main>
 <script>
@@ -156,9 +178,11 @@ function call(fn, arg, ms, tries) {
 }
 
 /* ---- the photo check's advice (pure, so it is tested on its own) ----
-   `check` = { faces } as counted ON THE PHONE. The count itself is what limits the shirts (cap() in the page); this only adds a
-   warning when the photo looks wrong for a team photo. (There used to be a men/women guess too. It was dropped on 3 Oct 2026: on
-   test photos it called 17 of 18 players of a women's team "men", and it would have told that team it looked like a men's team.)
+   `check` = { faces, said } — faces as counted ON THE PHONE; said = how many people the captain says are in the photo, when the
+   counter missed someone (only a number above the count is taken). The count is what limits the shirts (cap() in the page); this
+   only adds a warning when the photo looks wrong for a team photo, and tells the desk when the captain corrected the count.
+   (There used to be a men/women guess too. It was dropped on 3 Oct 2026: on test photos it called 17 of 18 players of a women's
+   team "men", and it would have told that team it looked like a men's team.)
    Returns { warnings: [texts for the captain], short: [phrases for the desk's one-line note] }. */
 function nOf_(x, one, many) { return x + ' ' + (x === 1 ? one : many); }
 function photoAdvice(check) {
@@ -170,11 +194,13 @@ function photoAdvice(check) {
     out.warnings.push('We can only see ' + nOf_(f, 'face', 'faces') + '. Is your whole team in the photo?');
     out.short.push('only ' + nOf_(f, 'face', 'faces'));
   }
+  if (check.said > f) out.short.push('captain says ' + nOf_(check.said, 'person', 'people'));   // staff check the photo before handing out
   return out;
 }
 
-/* The one line the desk sees next to the photo, e.g. "11 faces", or "2 faces · CHECK: only 2 faces". The server reads the count
-   from its start (facesFromCheck_ in src/Api.js), so it must keep starting with "<number> face(s)". */
+/* The one line the desk sees next to the photo, e.g. "11 faces", "2 faces · CHECK: only 2 faces", or "11 faces · CHECK: captain says
+   13 people". The server reads the count from it (facesFromCheck_ in src/Api.js): the captain's number when there is one, else the
+   "<number> face(s)" it must start with. */
 function photoNoteText(check) {
   var a = photoAdvice(check);
   return nOf_(check.faces, 'face', 'faces') + (a.short.length ? ' · CHECK: ' + a.short.join('; ') : '');
@@ -213,10 +239,10 @@ function photoNoteText(check) {
 
   // ---------- tabs ----------
   function tab(name) {
-    ['find', 'claims', 'stock'].forEach(function (n) { $('p-' + n).hidden = n !== name; $('t-' + n).setAttribute('aria-selected', n === name ? 'true' : 'false'); });
-    if (name === 'claims') loadClaims(); if (name === 'stock') loadStock(); if (name === 'find') $('code').focus();
+    ['find', 'claims', 'dist', 'stock'].forEach(function (n) { $('p-' + n).hidden = n !== name; $('t-' + n).setAttribute('aria-selected', n === name ? 'true' : 'false'); });
+    if (name === 'claims') loadClaims(); if (name === 'dist') loadDist(); if (name === 'stock') loadStock(); if (name === 'find') $('code').focus();
   }
-  ['find', 'claims', 'stock'].forEach(function (n) { $('t-' + n).onclick = function () { tab(n); }; });
+  ['find', 'claims', 'dist', 'stock'].forEach(function (n) { $('t-' + n).onclick = function () { tab(n); }; });
 
   // ---------- find + hand over ----------
   function find(code) {
@@ -232,7 +258,7 @@ function photoNoteText(check) {
   $('code').onkeydown = function (e) { if (e.key === 'Enter') find(); };
 
   function badge(status) {
-    var b = el('span', 'badge' + (status === 'reserved' ? ' ok' : status === 'cancelled' ? ' bad' : ''), status === 'reserved' ? 'Ready' : status === 'collected' ? 'Already collected' : 'Cancelled');
+    var b = el('span', 'badge' + (status === 'reserved' ? ' ok' : status === 'cancelled' ? ' bad' : ''), status === 'reserved' ? 'Ready' : status === 'collected' ? 'Handed out' : 'Cancelled');
     return b;
   }
   function showClaim(c) {
@@ -240,7 +266,7 @@ function photoNoteText(check) {
     var card = el('div', 'card'); card.style.marginTop = '16px';
     var head = el('div', 'row'); var h = el('h2', 'grow', c.company); head.appendChild(h); head.appendChild(badge(c.status)); card.appendChild(head);
     card.appendChild(el('p', 'muted', c.teamLabels.join(' + ') + ' · ' + c.entitlement + ' entitled')).style.margin = '4px 0 0';
-    if (c.status === 'collected') card.appendChild(el('p', 'small muted', 'Collected ' + c.collectedAt + ' by ' + c.collectedBy)).style.margin = '4px 0 0';
+    if (c.status === 'collected') card.appendChild(el('p', 'small muted', 'Handed out ' + c.collectedAt + ' by ' + c.collectedBy)).style.margin = '4px 0 0';
     if (c.status === 'cancelled') card.appendChild(el('p', 'small muted', 'Cancelled' + (c.note ? ': ' + c.note : ''))).style.margin = '4px 0 0';
 
     if (c.hasPhoto) {
@@ -262,14 +288,14 @@ function photoNoteText(check) {
     if (c.status === 'reserved') {
       var who = el('div'); who.style.marginTop = '16px'; who.appendChild(el('label', 'lbl', 'Handed over by (optional)'));
       var name = el('input'); name.type = 'text'; name.maxLength = 40; name.value = staff(); name.autocomplete = 'off'; who.appendChild(name); card.appendChild(who);
-      var ok = el('button', 'btn', 'Hand over & mark collected'); ok.type = 'button'; ok.style.marginTop = '12px';
+      var ok = el('button', 'btn', 'Hand over & mark handed out'); ok.type = 'button'; ok.style.marginTop = '12px';
       ok.onclick = function () {
         ok.disabled = true; ok.textContent = 'Saving…';
         try { localStorage.setItem('yx-staff', name.value.trim()); } catch (e) {}
         desk('admin_collect', { code: c.code, by: name.value.trim() }).then(function (r) {
-          if (!r.ok) { ok.disabled = false; ok.textContent = 'Hand over & mark collected'; return say('findErr', r.error); }
-          say('findErr', ''); showClaim(r.claim); out.insertBefore(note('', '✓ Marked collected. Hand over ' + r.claim.total + ' shirts.'), out.firstChild);
-        }, function (e) { ok.disabled = false; ok.textContent = 'Hand over & mark collected'; if (e.message !== 'auth') say('findErr', 'Couldn’t save — check the connection and tap again.'); });
+          if (!r.ok) { ok.disabled = false; ok.textContent = 'Hand over & mark handed out'; return say('findErr', r.error); }
+          say('findErr', ''); showClaim(r.claim); out.insertBefore(note('', '✓ Marked handed out. Hand over ' + r.claim.total + ' shirts.'), out.firstChild);
+        }, function (e) { ok.disabled = false; ok.textContent = 'Hand over & mark handed out'; if (e.message !== 'auth') say('findErr', 'Couldn’t save — check the connection and tap again.'); });
       };
       card.appendChild(ok);
       var cancel = el('button', 'btn danger', 'Cancel this claim…'); cancel.type = 'button'; cancel.style.marginTop = '10px';
@@ -301,7 +327,7 @@ function photoNoteText(check) {
       if (!r.ok) return box.appendChild(note('bad', r.error));
       var bar = el('div', 'row'), q = el('input'); q.type = 'search'; q.placeholder = 'Search company or code'; bar.appendChild(q); box.appendChild(bar);
       var chips = el('div', 'row'); chips.style.margin = '10px 0'; ['all', 'reserved', 'collected', 'cancelled'].forEach(function (f) {
-        var b = el('button', 'tab', f === 'all' ? 'All' : f === 'reserved' ? 'Ready' : f[0].toUpperCase() + f.slice(1)); b.type = 'button'; b.setAttribute('aria-selected', f === filterBy ? 'true' : 'false'); b.style.height = '36px';
+        var b = el('button', 'tab', f === 'all' ? 'All' : f === 'reserved' ? 'Ready' : f === 'collected' ? 'Handed out' : 'Cancelled'); b.type = 'button'; b.setAttribute('aria-selected', f === filterBy ? 'true' : 'false'); b.style.height = '36px';
         b.onclick = function () { filterBy = f; loadClaims(); }; chips.appendChild(b);
       }); box.appendChild(chips);
       var list = el('div', 'list'); box.appendChild(list);
@@ -316,6 +342,78 @@ function photoNoteText(check) {
         if (!n) list.appendChild(el('p', 'muted center', r.claims.length ? 'Nothing matches.' : 'No claims yet.'));
       }
       q.oninput = draw; draw();
+    }, function (e) { box.textContent = ''; if (e.message !== 'auth') box.appendChild(note('bad', 'Couldn’t load. Check the connection.')); });
+  }
+
+  // ---------- distribution: what to pack for each company, and what to pull from the boxes ----------
+  // GP Sports takes the shirts to the teams (the captain page says it will distribute them shortly), so staff pack per company.
+  // This lists every claim to deliver — company, teams, design × size × quantity — with the totals to pull from stock, prints
+  // cleanly (tick boxes on paper), and marks a claim handed out when its bag is delivered (the same as "Hand over" on a code).
+  var distBy = 'reserved', SIZE_ORDER = ['XS', 'S', 'M', 'L', 'XL', '2XL', '3XL'];
+  function byDesignSize(a, b) { return ((DESIGNS[a.design] || 9) - (DESIGNS[b.design] || 9)) || (SIZE_ORDER.indexOf(a.size) - SIZE_ORDER.indexOf(b.size)); }
+  function loadDist() {
+    var box = $('p-dist'); box.textContent = ''; box.appendChild(el('p', 'muted center', 'Loading…'));
+    desk('admin_claims').then(function (r) {
+      box.textContent = '';
+      if (!r.ok) return box.appendChild(note('bad', r.error));
+      var live = r.claims.filter(function (c) { return c.status !== 'cancelled'; });
+      var list = live.filter(function (c) { return distBy === 'all' || c.status === distBy; }).sort(function (a, b) { return a.company.localeCompare(b.company) || a.created.localeCompare(b.created); });
+      var count = function (st) { return live.filter(function (c) { return c.status === st; }).length; };
+      // controls (not printed)
+      var top = el('div', 'noprint'), chips = el('div', 'chips');
+      [['reserved', 'To deliver (' + count('reserved') + ')'], ['collected', 'Handed out (' + count('collected') + ')'], ['all', 'All']].forEach(function (f) {
+        var b = el('button', 'tab', f[1]); b.type = 'button'; b.setAttribute('aria-selected', f[0] === distBy ? 'true' : 'false');
+        b.onclick = function () { distBy = f[0]; loadDist(); }; chips.appendChild(b);
+      });
+      top.appendChild(chips);
+      var me = el('div', 'row'), who = el('input'); who.type = 'text'; who.maxLength = 40; who.placeholder = 'Your name (for the record)'; who.value = staff();
+      who.onchange = function () { try { localStorage.setItem('yx-staff', who.value.trim()); } catch (e) {} };
+      var pr = el('button', 'btn slim', 'Print'); pr.type = 'button'; pr.onclick = function () { window.print(); };
+      me.appendChild(who); me.appendChild(pr); top.appendChild(me); box.appendChild(top);
+      var shirts = list.reduce(function (a, c) { return a + c.total; }, 0), flagged = list.filter(function (c) { return c.flagged; }).length;
+      box.appendChild(el('h2', 'printonly', 'Yonex shirts — ' + (distBy === 'reserved' ? 'to deliver' : distBy === 'collected' ? 'handed out' : 'all claims') + ' · ' + new Date().toLocaleString('en-GB', { dateStyle: 'medium', timeStyle: 'short' })));
+      box.appendChild(el('p', 'strong', list.length + (list.length === 1 ? ' claim · ' : ' claims · ') + shirts + (shirts === 1 ? ' shirt' : ' shirts') + (flagged ? ' · ' + flagged + ' to check against the photo' : ''))).style.margin = '12px 0 4px';
+      if (!list.length) return box.appendChild(el('p', 'muted center', distBy === 'reserved' ? 'Nothing waiting to be delivered.' : 'Nothing here yet.'));
+      // what to pull from the boxes: design × size
+      var designs = [], sizes = [], qty = {};
+      list.forEach(function (c) { c.lines.forEach(function (l) { if (designs.indexOf(l.design) < 0) designs.push(l.design); if (sizes.indexOf(l.size) < 0) sizes.push(l.size); qty[l.design + '|' + l.size] = (qty[l.design + '|' + l.size] || 0) + l.qty; }); });
+      designs.sort(function (a, b) { return (DESIGNS[a] || 9) - (DESIGNS[b] || 9); }); sizes.sort(function (a, b) { return SIZE_ORDER.indexOf(a) - SIZE_ORDER.indexOf(b); });
+      var pick = el('div', 'card'), tb = el('table', 'grid'), hd = el('tr'); hd.appendChild(el('th', null, 'Size')); designs.forEach(function (d) { hd.appendChild(el('th', null, d)); }); hd.appendChild(el('th', null, 'Total'));
+      var thead = el('thead'); thead.appendChild(hd); tb.appendChild(thead); var body = el('tbody'), colTot = {};
+      sizes.forEach(function (z) {
+        var tr = el('tr'), rowTot = 0; tr.appendChild(el('td', null, z));
+        designs.forEach(function (d) { var n = qty[d + '|' + z] || 0; rowTot += n; colTot[d] = (colTot[d] || 0) + n; tr.appendChild(el('td', n ? '' : 'na', n ? String(n) : '–')); });
+        tr.appendChild(el('td', null, String(rowTot))).style.fontWeight = '800'; body.appendChild(tr);
+      });
+      var trT = el('tr'); trT.appendChild(el('td', null, 'Total')); designs.forEach(function (d) { trT.appendChild(el('td', null, String(colTot[d]))).style.fontWeight = '800'; }); trT.appendChild(el('td', null, String(shirts))).style.fontWeight = '800'; body.appendChild(trT);
+      tb.appendChild(body); pick.appendChild(el('p', 'small muted', 'To pull from the boxes')).style.margin = '0 0 6px'; pick.appendChild(tb); box.appendChild(pick);
+      // one card per company, one block per claim
+      var companies = []; list.forEach(function (c) { if (companies.indexOf(c.company) < 0) companies.push(c.company); });
+      companies.forEach(function (name) {
+        var mine = list.filter(function (c) { return c.company === name; }), card = el('div', 'card dco'), h = el('h3', null, name);
+        h.appendChild(el('span', null, mine.reduce(function (a, c) { return a + c.total; }, 0) + ' shirts')); card.appendChild(h);
+        mine.forEach(function (c) {
+          var blk = el('div', 'dcl'), what = el('div', 'what');
+          what.appendChild(el('span', 'box')); what.appendChild(document.createTextNode(c.teamLabels.join(' + ') + ' · ' + c.total + (c.total === 1 ? ' shirt' : ' shirts')));
+          blk.appendChild(what);
+          blk.appendChild(el('div', null, c.lines.slice().sort(byDesignSize).map(function (l) { return l.qty + '× ' + l.design + ' ' + l.size; }).join(' · ')));
+          if (c.flagged) blk.appendChild(note('warn', c.note.replace(/^Photo check \(phone estimate\): /, 'Photo check: '))).style.marginTop = '6px';
+          blk.appendChild(el('div', 'small muted', c.code + ' · claimed ' + c.created.slice(5, 16) + (c.status === 'collected' ? ' · handed out ' + c.collectedAt.slice(5, 16) + (c.collectedBy ? ' by ' + c.collectedBy : '') : '')));
+          if (c.status === 'reserved') {
+            var b = el('button', 'btn ghost slim noprint', 'Mark handed out'); b.type = 'button'; b.style.marginTop = '8px';
+            b.onclick = function () {
+              b.disabled = true; b.textContent = 'Saving…';
+              desk('admin_collect', { code: c.code, by: who.value.trim() || 'distribution' }).then(function (res) {
+                if (!res.ok) { b.disabled = false; b.textContent = 'Mark handed out'; blk.appendChild(note('bad', res.error)); return; }
+                loadDist();
+              }, function (e) { b.disabled = false; b.textContent = 'Mark handed out'; if (e.message !== 'auth') blk.appendChild(note('bad', 'Couldn’t save — check the connection and tap again.')); });
+            };
+            blk.appendChild(b);
+          }
+          card.appendChild(blk);
+        });
+        box.appendChild(card);
+      });
     }, function (e) { box.textContent = ''; if (e.message !== 'auth') box.appendChild(note('bad', 'Couldn’t load. Check the connection.')); });
   }
 

@@ -116,6 +116,8 @@ label.lbl { display: block; margin: 0 0 6px; font-size: 14px; font-weight: 600; 
 .faces { display: flex; gap: 8px; margin-top: 10px; padding: 2px; overflow-x: auto; scrollbar-width: none; -webkit-overflow-scrolling: touch; }
 .faces::-webkit-scrollbar { display: none; }
 .faces img { flex: none; width: 54px; height: 54px; border-radius: 50%; object-fit: cover; border: 2.5px solid var(--accent); background: var(--line); }
+.fix { margin-top: 2px; }
+.fix .line { padding: 10px 12px; border-radius: 12px; background: var(--brand-soft); }
 .done .reserved { margin: 6px 0 2px; font-size: 32px; font-weight: 900; line-height: 1.1; color: var(--ok); }
 .pick { display: flex; align-items: center; justify-content: center; padding: 30px 10px; border: 2px dashed var(--line); border-radius: 12px; color: var(--brand); font-weight: 700; cursor: pointer; }
 .pick input, .retake input { display: none; }
@@ -188,9 +190,11 @@ function call(fn, arg, ms, tries) {
 }
 
 /* ---- the photo check's advice (pure, so it is tested on its own) ----
-   `check` = { faces } as counted ON THE PHONE. The count itself is what limits the shirts (cap() in the page); this only adds a
-   warning when the photo looks wrong for a team photo. (There used to be a men/women guess too. It was dropped on 3 Oct 2026: on
-   test photos it called 17 of 18 players of a women's team "men", and it would have told that team it looked like a men's team.)
+   `check` = { faces, said } — faces as counted ON THE PHONE; said = how many people the captain says are in the photo, when the
+   counter missed someone (only a number above the count is taken). The count is what limits the shirts (cap() in the page); this
+   only adds a warning when the photo looks wrong for a team photo, and tells the desk when the captain corrected the count.
+   (There used to be a men/women guess too. It was dropped on 3 Oct 2026: on test photos it called 17 of 18 players of a women's
+   team "men", and it would have told that team it looked like a men's team.)
    Returns { warnings: [texts for the captain], short: [phrases for the desk's one-line note] }. */
 function nOf_(x, one, many) { return x + ' ' + (x === 1 ? one : many); }
 function photoAdvice(check) {
@@ -202,11 +206,13 @@ function photoAdvice(check) {
     out.warnings.push('We can only see ' + nOf_(f, 'face', 'faces') + '. Is your whole team in the photo?');
     out.short.push('only ' + nOf_(f, 'face', 'faces'));
   }
+  if (check.said > f) out.short.push('captain says ' + nOf_(check.said, 'person', 'people'));   // staff check the photo before handing out
   return out;
 }
 
-/* The one line the desk sees next to the photo, e.g. "11 faces", or "2 faces · CHECK: only 2 faces". The server reads the count
-   from its start (facesFromCheck_ in src/Api.js), so it must keep starting with "<number> face(s)". */
+/* The one line the desk sees next to the photo, e.g. "11 faces", "2 faces · CHECK: only 2 faces", or "11 faces · CHECK: captain says
+   13 people". The server reads the count from it (facesFromCheck_ in src/Api.js): the captain's number when there is one, else the
+   "<number> face(s)" it must start with. */
 function photoNoteText(check) {
   var a = photoAdvice(check);
   return nOf_(check.faces, 'face', 'faces') + (a.short.length ? ' · CHECK: ' + a.short.join('; ') : '');
@@ -425,7 +431,7 @@ function faceCount(f, canvas, quarters, yn) {
   // The headcount rule: the photo's people decide how many shirts can be claimed (never more than the team allowance).
   // faces() = how many people the phone counted, or null when nobody has counted (the check could not run, or an older claim has no count).
   function faces() {
-    if (S.photo) return S.photo.check && S.photo.check.state === 'done' ? S.photo.check.faces : null;
+    if (S.photo) { var ck = S.photo.check; return ck && ck.state === 'done' ? (ck.said > ck.faces ? ck.said : ck.faces) : null; }   // the captain's number when they corrected the count
     var c = S.amend && S.data.claims.filter(function (x) { return x.code === S.amend; })[0];
     return c && typeof c.faces === 'number' ? c.faces : null;
   }
@@ -627,7 +633,7 @@ function faceCount(f, canvas, quarters, yn) {
       box.appendChild(S.photoBusy ? el('p', 'muted small', 'Preparing your new photo…') : checkBlock());
     } else if (S.amend) {
       var kept = faces(), q = el('p', 'muted'); q.style.margin = '0';
-      q.appendChild(document.createTextNode('Keeping the photo you already sent' + (kept != null ? ' (' + kept + (kept === 1 ? ' person' : ' people') + ' counted)' : '') + '. '));
+      q.appendChild(document.createTextNode('Keeping the photo you already sent' + (kept != null ? ' (' + kept + (kept === 1 ? ' person' : ' people') + ')' : '') + '. '));
       var r = el('label', 'linklike', 'Replace it'); r.appendChild(fileInput()); q.appendChild(r); box.appendChild(q);
     } else {
       var l2 = el('label', 'pick'); l2.appendChild(document.createTextNode(S.photoBusy ? 'Preparing photo…' : '📷  Add team photo')); l2.appendChild(fileInput()); box.appendChild(l2);
@@ -796,12 +802,42 @@ function faceCount(f, canvas, quarters, yn) {
       return wrap;
     }
     if (ck.state === 'failed') { wrap.appendChild(el('p', 'muted small', 'The quick photo count isn’t available on this phone. No problem: you can go on, and GP Sports staff will check your photo.')); return wrap; }
-    var a = photoAdvice(ck), f = ck.faces;
-    if (f > 0) wrap.appendChild(el('p', 'strong', 'We counted ' + f + (f === 1 ? ' person' : ' people') + '. You can claim one shirt per person, up to your team’s allowance.'));
-    a.warnings.forEach(function (w) { wrap.appendChild(note('warn', w)); });
-    if (f === 0) wrap.appendChild(el('p', 'muted small', 'Retake the photo to go on: shirts are claimed one per person in it.'));
-    else wrap.appendChild(el('p', 'muted small', 'Everyone counted is boxed on the photo and in the row of faces under it. Someone missing? Retake it with everyone in the shot, facing the camera.'));
+    var a = photoAdvice(ck), f = ck.faces, said = ck.said > f ? ck.said : 0;
+    if (said) {
+      wrap.appendChild(el('p', 'strong', 'We counted ' + f + ' — you told us ' + said + (said === 1 ? ' person' : ' people') + '. You can claim one shirt per person, up to your team’s allowance.'));
+      wrap.appendChild(note('', 'GP Sports staff will check your photo before handing out the shirts.'));
+    } else {
+      if (f > 0) wrap.appendChild(el('p', 'strong', 'We counted ' + f + (f === 1 ? ' person' : ' people') + '. You can claim one shirt per person, up to your team’s allowance.'));
+      a.warnings.forEach(function (w) { wrap.appendChild(note('warn', w)); });
+      if (f === 0) wrap.appendChild(el('p', 'muted small', 'Retake the photo to go on — or, if your team is in it, tell us how many people below.'));
+      else wrap.appendChild(el('p', 'muted small', 'Everyone counted is boxed on the photo and in the row of faces under it. Someone missing? Retake it with everyone facing the camera — or tell us below.'));
+    }
+    wrap.appendChild(countFix(ck));
     return wrap;
+  }
+  // The count is the phone's, and a face hidden behind someone, turned away or in deep shadow can be missed. Rather than leave the
+  // captain stuck below their team, they may say how many people are really in the photo — more than counted, at most everything the
+  // company's teams may claim. The claim then carries "CHECK: captain says N people", and the desk checks the photo before handing out.
+  function countFix(ck) {
+    var box = el('div', 'fix'), most = S.data ? S.data.teams.reduce(function (a, t) { return a + t.entitlement; }, 0) : 0;
+    if (!S.data || most <= ck.faces || !isOpen()) return box;
+    if (!(ck.said > ck.faces)) {
+      var ask = el('button', 'linklike', 'Count wrong? Tell us how many people are in the photo'); ask.type = 'button';
+      ask.onclick = function () { ck.said = ck.faces + 1; changed(); render(); };
+      box.appendChild(ask);
+      return box;
+    }
+    var row = el('div', 'line'), step = el('div', 'step'), minus = el('button', null, '−'), plus = el('button', null, '+');
+    row.appendChild(el('span', 'grow strong', 'People in your photo'));
+    minus.type = plus.type = 'button'; minus.setAttribute('aria-label', 'One person fewer'); plus.setAttribute('aria-label', 'One person more');
+    minus.disabled = ck.said <= ck.faces + 1; plus.disabled = ck.said >= most;
+    minus.onclick = function () { ck.said = Math.max(ck.faces + 1, ck.said - 1); changed(); render(); };
+    plus.onclick = function () { ck.said = Math.min(most, ck.said + 1); changed(); render(); };
+    step.appendChild(minus); step.appendChild(el('span', 'n', String(ck.said))); step.appendChild(plus); row.appendChild(step); box.appendChild(row);
+    var back = el('button', 'linklike', 'Use our count (' + ck.faces + ') instead'); back.type = 'button';
+    back.onclick = function () { ck.said = 0; changed(); render(); };
+    var p = el('p', 'small'); p.style.margin = '8px 0 0'; p.appendChild(back); box.appendChild(p);
+    return box;
   }
   function checkNote() {   // what the desk is told, in one line
     var ck = S.photo && S.photo.check;
