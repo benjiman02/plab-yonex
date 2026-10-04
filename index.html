@@ -219,21 +219,33 @@ var COMPANY_LABELS = {"Analog Devices":"Analog Devices (ADI)","Efinix Technology
 </script>
 <script>
 /* ---- Counting the people in the team photo, ON THE PHONE (nothing is uploaded for it) ----
-   The detector is the SSD MobileNet v1 face detector of @vladmandic/face-api (vendor/). It looks at the whole photo first. When the
-   faces it finds are small for the photo (a wide shot of a big team), it looks again at four overlapping quarters, enlarged, and adds
-   any face it is sure of that it had not seen yet — so a face too small for the first look is still counted, and a face seen twice
-   counts once. A face the detector is unsure of counts only when it is about the size of the faces it IS sure of: that keeps a
-   teammate half-hidden in the back row, and drops someone small walking past in the background (or a face on a phone screen).
-   On 19 test photos with a known count (posed teams of 3 to 18, group selfies, schoolgirls in tudung, empty halls) this counted
-   every one exactly, and 26–27 of a 28-person lineup; the small detector it replaced (TinyFaceDetector) found 0 faces in the 15-,
-   18- and 28-person shots (README, "Photo check").
-   Pure geometry first (tested in Node), then faceCount() — the part that needs the browser. */
+   Two face detectors, each good where the other is weak:
+   1. SSD MobileNet v1 (@vladmandic/face-api, vendor/) makes the count. It looks at the whole photo first; when the faces it finds
+      are small for the photo (a wide shot of a big team) it looks again at four overlapping quarters, enlarged, and adds any face
+      it is sure of that it had not seen yet. A face it is unsure of counts only when it is about the size of the faces it IS sure
+      of (that keeps a teammate half-hidden in the back row, and drops someone small walking past behind). A weaker box that
+      overlaps a stronger one is the same person — in a tightly packed back row SSD likes to put a second box between two heads.
+   2. YuNet (OpenCV, vendor/models/yunet.onnx, run by onnxruntime-web) is the second opinion. It is better with faces in shadow
+      (caps, hat brims), half-hidden or turned away — but it also sees far more bystanders. So it only ADDS a face that it is very
+      sure of, that is the size of the group's faces, and that is not a face already counted. If YuNet cannot run on a phone (very
+      old iOS), the count is SSD's alone.
+   On 27 test photos with a known count (posed teams of 3 to 18, a 32-person lineup, group selfies, schoolgirls in tudung, the
+   owner's own 15-person stand selfie, empty halls) this counts all 27 exactly — in Chrome and in WebKit (Safari's engine) alike;
+   SSD alone got 23, and the very first counter (TinyFaceDetector) found nobody at all in the 15- and 18-person teams (README,
+   "Photo check"). The thresholds below were chosen on those photos.
+   Pure geometry first (tested in Node), then the parts that need the browser. */
 var FACECOUNT = {
-  MIN: 0.3,          // the detector's lowest score that is looked at
-  SURE: 0.5,         // from this score up a face always counts
-  NEAR: 0.45,        // an unsure face counts if it is at least this fraction of the typical sure face's width
+  MIN: 0.35,         // SSD's lowest score that is looked at
+  SURE: 0.55,        // from this score up an SSD face always counts
+  NEAR: 0.6,         // an unsure face counts if it is at least this fraction of the typical sure face's width
   SMALL: 0.04,       // sure faces narrower than this fraction of the photo's long side (typical) → look at the quarters too
-  OVERLAP: 0.3       // how much neighbouring quarters overlap, so a face cut by one quarter's edge is whole in the next
+  OVERLAP: 0.3,      // how much neighbouring quarters overlap, so a face cut by one quarter's edge is whole in the next
+  DUP_IOU: 0.25,     // a weaker box overlapping a stronger one this much (over their union) …
+  DUP_IOM: 0.45,     // … or this much of itself is the same face
+  YN_MIN: 0.5,       // YuNet's lowest score that is looked at
+  YN_NMS: 0.3,       // YuNet's own boxes overlapping this much are one face
+  YN_ADD: 0.8,       // YuNet adds a face only from this score up …
+  YN_SIZE: 0.7       // … and only at least this fraction of the typical width of the faces SSD is sure of
 };
 
 function fcOverlap(a, b) {   // { iou, iom }: the boxes' intersection over their union, and over the smaller box
@@ -258,20 +270,29 @@ function fcAdd(base, more) {
   });
   return all;
 }
+/* One box per face: strongest first; a box overlapping a kept one by DUP_IOU of their union, or DUP_IOM of itself, is the same face.
+   (Two real faces never overlap that much — the one behind would be hidden.) */
+function fcDedup(boxes) {
+  var keep = [];
+  boxes.slice().sort(function (a, b) { return b.score - a.score; }).forEach(function (b) {
+    if (!keep.some(function (k) { var o = fcOverlap(k, b); return o.iou > FACECOUNT.DUP_IOU || o.iom > FACECOUNT.DUP_IOM; })) keep.push(b);
+  });
+  return keep;
+}
 function fcMedian(xs) { var s = xs.slice().sort(function (a, b) { return a - b; }), n = s.length; return n ? (n % 2 ? s[(n - 1) / 2] : (s[n / 2 - 1] + s[n / 2]) / 2) : 0; }
+function fcSureWidth(boxes) { return fcMedian(boxes.filter(function (b) { return b.score >= FACECOUNT.SURE; }).map(function (b) { return b.w; })); }
 /* Unsure faces (MIN ≤ score < SURE) count only when they are about the size of the sure ones. With no sure face at all there is
    nothing to compare with, so every face found counts: an under-count costs a team shirts, and the desk checks the photo anyway. */
 function fcKeep(boxes) {
-  var sure = boxes.filter(function (b) { return b.score >= FACECOUNT.SURE; });
-  if (!sure.length) return boxes.slice();
-  var ref = fcMedian(sure.map(function (b) { return b.w; }));
+  var ref = fcSureWidth(boxes);
+  if (!ref) return boxes.slice();
   return boxes.filter(function (b) { return b.score >= FACECOUNT.SURE || b.w >= FACECOUNT.NEAR * ref; });
 }
 /* Look at the quarters too? Only when the first look found faces it is sure of, and they are small for the photo. (A photo with no
    face at all is not enlarged: that only turns up phantom faces in an empty hall.) */
 function fcNeedsQuarters(boxes, W, H) {
-  var sure = boxes.filter(function (b) { return b.score >= FACECOUNT.SURE; });
-  return sure.length > 0 && fcMedian(sure.map(function (b) { return b.w; })) < FACECOUNT.SMALL * Math.max(W, H);
+  var ref = fcSureWidth(boxes);
+  return ref > 0 && ref < FACECOUNT.SMALL * Math.max(W, H);
 }
 /* The four overlapping quarters of a W×H photo, as {x, y, w, h}. */
 function fcQuarters(W, H) {
@@ -283,6 +304,35 @@ function fcQuarters(W, H) {
 function fcCut(b, t, W, H) {
   var m = 2;
   return (b.x < m && t.x > 0) || (b.y < m && t.y > 0) || (b.x + b.w > t.w - m && t.x + t.w < W) || (b.y + b.h > t.h - m && t.y + t.h < H);
+}
+/* YuNet's second opinion: the faces it is very sure of (YN_ADD), the size of the group's faces (YN_SIZE × the typical sure SSD face),
+   that are not a face SSD already counted. A bystander is smaller than the group, so it is left out; with no face SSD is sure of
+   there is no group to compare with, and nothing is added (an empty hall stays empty). */
+function fcSecondOpinion(ssd, yn) {
+  var ref = fcSureWidth(ssd);
+  if (!ref) return ssd.slice();
+  return fcAdd(ssd, yn.filter(function (b) { return b.score >= FACECOUNT.YN_ADD && b.w >= FACECOUNT.YN_SIZE * ref; }));
+}
+
+/* YuNet's raw output → face boxes. `out` maps 'cls_8' … 'bbox_32' to flat arrays (one value per grid cell, four per box), for an
+   input padded to pw × ph (multiples of 32). The decoding is OpenCV's (FaceDetectorYN): per stride s, a cell (r, c) scores
+   √(cls · obj); its box centre is ((c + dx) · s, (r + dy) · s) and its size (e^dw · s, e^dh · s). Then non-maximum suppression. */
+function ynDecode(out, pw, ph) {
+  var boxes = [];
+  [8, 16, 32].forEach(function (s) {
+    var cols = pw / s, rows = ph / s, cls = out['cls_' + s], obj = out['obj_' + s], bb = out['bbox_' + s];
+    for (var r = 0; r < rows; r++) for (var c = 0; c < cols; c++) {
+      var i = r * cols + c, score = Math.sqrt(Math.min(1, Math.max(0, cls[i])) * Math.min(1, Math.max(0, obj[i])));
+      if (score < FACECOUNT.YN_MIN) continue;
+      var w = Math.exp(bb[i * 4 + 2]) * s, h = Math.exp(bb[i * 4 + 3]) * s;
+      boxes.push({ x: (c + bb[i * 4]) * s - w / 2, y: (r + bb[i * 4 + 1]) * s - h / 2, w: w, h: h, score: score });
+    }
+  });
+  var keep = [];
+  boxes.sort(function (a, b) { return b.score - a.score; }).forEach(function (b) {
+    if (!keep.some(function (k) { return fcOverlap(k, b).iou > FACECOUNT.YN_NMS; })) keep.push(b);
+  });
+  return keep;
 }
 
 /* The faces in reading order — rows from the top, each row left to right — so the row of portraits under the photo follows the
@@ -296,9 +346,25 @@ function fcReadingOrder(boxes) {
   return rows.reduce(function (out, r) { return out.concat(r.items.sort(function (a, b) { return a.x - b.x; })); }, []);
 }
 
-/* Count the faces on a canvas with face-api `f` (its SSD model loaded). → { faces, boxes: [{x, y, w, h, score}], looks }.
-   `quarters === false` skips the second look (a phone without WebGL, where each look takes seconds). */
-function faceCount(f, canvas, quarters) {
+/* YuNet on a canvas with onnxruntime-web `ort` and its `session`. The input is what OpenCV feeds it: BGR, 0–255, NCHW, padded at
+   the right and bottom to a multiple of 32 (the model was edited to take any such size — tools/yunet-anysize.py). */
+function ynRun(ort, session, canvas) {
+  var W = canvas.width, H = canvas.height, pw = Math.ceil(W / 32) * 32, ph = Math.ceil(H / 32) * 32, plane = pw * ph;
+  var px = canvas.getContext('2d').getImageData(0, 0, W, H).data, t = new Float32Array(3 * plane);
+  for (var y = 0; y < H; y++) {
+    for (var x = 0, o = y * pw, i = y * W * 4; x < W; x++, o++, i += 4) { t[o] = px[i + 2]; t[plane + o] = px[i + 1]; t[2 * plane + o] = px[i]; }
+  }
+  var feeds = {}; feeds[session.inputNames[0]] = new ort.Tensor('float32', t, [1, 3, ph, pw]);
+  return session.run(feeds).then(function (res) {
+    var out = {}; Object.keys(res).forEach(function (k) { out[k] = res[k].data; });
+    return ynDecode(out, pw, ph);
+  });
+}
+
+/* Count the faces on a canvas with face-api `f` (its SSD model loaded) and, when given, YuNet `yn` ({ ort, session }).
+   → { faces, boxes: [{x, y, w, h, score}], looks }. `quarters === false` skips SSD's second look (a phone without WebGL, where each
+   look takes seconds). If YuNet fails on this photo the count is SSD's alone. */
+function faceCount(f, canvas, quarters, yn) {
   var W = canvas.width, H = canvas.height, opts = new f.SsdMobilenetv1Options({ minConfidence: FACECOUNT.MIN, maxResults: 300 }), looks = 1;
   function look(c, t) {
     return f.detectAllFaces(c, opts).then(function (found) {
@@ -325,7 +391,10 @@ function faceCount(f, canvas, quarters) {
     });
     return chain.then(function () { return fcAdd(first, more); });
   }).then(function (all) {
-    var kept = fcKeep(all);
+    var ssd = fcDedup(fcKeep(all));
+    if (!yn) return ssd;
+    return ynRun(yn.ort, yn.session, canvas).then(function (y) { looks++; return fcSecondOpinion(ssd, y); }, function () { return ssd; });
+  }).then(function (kept) {
     return { faces: kept.length, boxes: kept, looks: looks };
   });
 }
@@ -626,7 +695,8 @@ function faceCount(f, canvas, quarters) {
       try {
         var scale = Math.min(1, 1400 / Math.max(img.naturalWidth, img.naturalHeight)), c = document.createElement('canvas');
         c.width = Math.max(1, Math.round(img.naturalWidth * scale)); c.height = Math.max(1, Math.round(img.naturalHeight * scale));
-        c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
+        var g = c.getContext('2d'); g.imageSmoothingEnabled = true; g.imageSmoothingQuality = 'high';   // a smooth shrink: sharper small faces, and the same
+        g.drawImage(img, 0, 0, c.width, c.height);                                                      // count in Safari as in Chrome
         var q = 0.8, data;
         do { data = c.toDataURL('image/jpeg', q); q -= 0.2; } while (data.length > 2400000 && q > 0.2);
         if (data.indexOf('data:image/jpeg;base64,') !== 0) return fail();
@@ -640,8 +710,9 @@ function faceCount(f, canvas, quarters) {
   }
 
   // ---------- the photo check: count the people in the photo, on THIS phone only ----------
-  // An open-source face detector (face-api's SSD MobileNet, hosted next to this page in vendor/; the counting rules are in
-  // facecount.js) counts the faces. Nothing is uploaded for it. The COUNT caps the shirts (one per person counted, see cap()).
+  // Two open-source face detectors, hosted next to this page in vendor/ — face-api's SSD MobileNet makes the count and OpenCV's YuNet
+  // (run by onnxruntime-web) gives a second opinion; the counting rules are in facecount.js. Nothing is uploaded for it. The COUNT
+  // caps the shirts (one per person counted, see cap()).
   // If the count can't be made (old phone, very slow data) nothing is capped and the claim carries on as before. The desk gets a
   // one-line note next to the photo — the same line the server reads the count from.
   var faceLib = null, faceLibWanted = false;
@@ -665,16 +736,41 @@ function faceCount(f, canvas, quarters) {
     faceLib.catch(function () { faceLib = null; });   // a failed load may be tried again with the next photo
     return faceLib;
   }
-  // Get the counter ready while the captain reads the page and takes the photo: the library and model (about 4 MB, fetched once —
-  // the phone keeps them) come down in the background, so the count is there moments after the photo is. A phone set to save data
+  // The second opinion: onnxruntime-web (WebAssembly, one thread — GitHub Pages cannot switch on the cross-origin isolation that
+  // threads need) running YuNet. Optional: a phone that cannot run it (WebAssembly SIMD came with iOS 16.4) gets SSD's count alone.
+  var ynLib = null;
+  function loadYunet() {
+    if (ynLib) return ynLib;
+    ynLib = new Promise(function (ok, no) {
+      var s = document.createElement('script'); s.src = 'vendor/ort/ort.wasm.min.js'; s.async = true;
+      s.onload = function () { window.ort ? ok(window.ort) : no(new Error('onnxruntime missing')); };
+      s.onerror = function () { no(new Error('onnxruntime did not load')); };
+      document.head.appendChild(s);
+    }).then(function (ort) {
+      ort.env.wasm.numThreads = 1;
+      ort.env.wasm.wasmPaths = new URL('vendor/ort/', document.baseURI).href;   // where its .wasm and .mjs live (an absolute address)
+      return ort.InferenceSession.create('vendor/models/yunet.onnx', { executionProviders: ['wasm'], graphOptimizationLevel: 'all' }).then(function (session) {
+        var c = document.createElement('canvas'); c.width = c.height = 64;   // one run on a blank square, so the first photo is quick
+        return ynRun(ort, session, c).then(function () { return { ort: ort, session: session }; });
+      });
+    });
+    ynLib.catch(function () { ynLib = null; });
+    return ynLib;
+  }
+  // Get the counter ready while the captain reads the page and takes the photo: the two detectors (about 7 MB, fetched once — the
+  // phone keeps them) come down in the background, so the count is there moments after the photo is. A phone set to save data
   // waits until a photo is actually added.
   function prepareFaceLib() {
     if (faceLibWanted) return; faceLibWanted = true;
     var net = navigator.connection; if (net && net.saveData) return;
-    setTimeout(function () { loadFaceLib().then(null, function () {}); }, 500);
+    setTimeout(function () { loadFaceLib().then(null, function () {}); loadYunet().then(null, function () {}); }, 500);
   }
   function checkPhoto(canvas) {
-    var run = loadFaceLib().then(function (f) { return faceCount(f, canvas, f.tf.getBackend() === 'webgl'); });
+    var yn = loadYunet().then(null, function () { return null; });   // optional: failing to load means SSD counts alone
+    var run = loadFaceLib().then(function (f) {
+      var late = new Promise(function (ok) { setTimeout(function () { ok(null); }, 8000); });   // SSD is ready: wait at most 8 s more for YuNet
+      return Promise.race([yn, late]).then(function (y) { return faceCount(f, canvas, f.tf.getBackend() === 'webgl', y); });
+    });
     var slow = new Promise(function (ok, no) { setTimeout(function () { no(new Error('the check took too long')); }, 40000); });
     return Promise.race([run, slow]);
   }
