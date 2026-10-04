@@ -113,6 +113,10 @@ label.lbl { display: block; margin: 0 0 6px; font-size: 14px; font-weight: 600; 
 .shot .ring.hit { stroke: var(--accent); stroke-width: 2.5px; }
 .shot .tag { position: absolute; left: 8px; bottom: 8px; padding: 4px 10px; border-radius: 999px; background: rgba(0,0,0,.66); color: #fff; font-size: 13px; font-weight: 700; }
 .shot .tag .spin { width: 12px; height: 12px; border-width: 2px; margin-right: 6px; vertical-align: -1px; }
+.faces { display: flex; gap: 8px; margin-top: 10px; padding: 2px; overflow-x: auto; scrollbar-width: none; -webkit-overflow-scrolling: touch; }
+.faces::-webkit-scrollbar { display: none; }
+.faces img { flex: none; width: 54px; height: 54px; border-radius: 50%; object-fit: cover; border: 2.5px solid var(--accent); background: var(--line); }
+.done .reserved { margin: 6px 0 2px; font-size: 32px; font-weight: 900; line-height: 1.1; color: var(--ok); }
 .pick { display: flex; align-items: center; justify-content: center; padding: 30px 10px; border: 2px dashed var(--line); border-radius: 12px; color: var(--brand); font-weight: 700; cursor: pointer; }
 .pick input, .retake input { display: none; }
 .retake { display: inline-block; margin-top: 10px; padding: 8px 16px; border: 1.5px solid var(--line); border-radius: 10px; background: var(--bg); font-size: 14px; font-weight: 600; cursor: pointer; }
@@ -281,6 +285,17 @@ function fcCut(b, t, W, H) {
   return (b.x < m && t.x > 0) || (b.y < m && t.y > 0) || (b.x + b.w > t.w - m && t.x + t.w < W) || (b.y + b.h > t.h - m && t.y + t.h < H);
 }
 
+/* The faces in reading order — rows from the top, each row left to right — so the row of portraits under the photo follows the
+   photo. A face whose centre is within 0.6 face-heights of a row's first face belongs to that row. */
+function fcReadingOrder(boxes) {
+  var rows = [];
+  boxes.slice().sort(function (a, b) { return (a.y + a.h / 2) - (b.y + b.h / 2); }).forEach(function (b) {
+    var row = rows[rows.length - 1], cy = b.y + b.h / 2;
+    if (row && cy - row.top < 0.6 * row.h) row.items.push(b); else rows.push({ top: cy, h: b.h, items: [b] });
+  });
+  return rows.reduce(function (out, r) { return out.concat(r.items.sort(function (a, b) { return a.x - b.x; })); }, []);
+}
+
 /* Count the faces on a canvas with face-api `f` (its SSD model loaded). → { faces, boxes: [{x, y, w, h, score}], looks }.
    `quarters === false` skips the second look (a phone without WebGL, where each look takes seconds). */
 function faceCount(f, canvas, quarters) {
@@ -305,7 +320,7 @@ function faceCount(f, canvas, quarters) {
         var c = document.createElement('canvas'); c.width = t.w; c.height = t.h;
         c.getContext('2d').drawImage(canvas, t.x, t.y, t.w, t.h, 0, 0, t.w, t.h);
         looks++;
-        return look(c, t).then(function (found) { more = more.concat(found); });
+        return look(c, t).then(function (found) { more = more.concat(found); c.width = c.height = 0; });   // freed at once: iPhones cap canvas memory
       });
     });
     return chain.then(function () { return fcAdd(first, more); });
@@ -357,10 +372,16 @@ function faceCount(f, canvas, quarters) {
   function isOpen() { return S.data.open !== false; }
   function view() { var v = $('view'); v.textContent = ''; return v; }
   function showBar(on) { $('bar').hidden = !on; $('wrap').className = 'wrap' + (on ? ' has-bar' : ''); }
+  // While a company's teams load (or before one is chosen) a photo already added stays on screen: switching company keeps it.
+  function renderWaiting(msg) {
+    var v = view(); showBar(false);
+    if (S.photo) v.appendChild(photoSection());
+    v.appendChild(el('p', 'center muted', msg || 'Loading…')).style.marginTop = S.photo ? '28px' : '30px';
+  }
 
   // ---------- load ----------
   function load(quiet) {
-    if (!quiet) { view().appendChild(el('p', 'center muted', 'Loading…')); showBar(false); }
+    if (!quiet) renderWaiting();
     var asked = JSON.stringify(who());   // if the captain switches company while this is loading, the late answer is dropped
     return call('api_company', who(), 40000, 2).then(function (res) {
       if (JSON.stringify(who()) !== asked) return false;
@@ -395,6 +416,7 @@ function faceCount(f, canvas, quarters) {
 
   // ---------- the form ----------
   function render() {
+    if (!S.data) return renderWaiting();   // (a photo count can finish while a newly picked company is still loading)
     if (S.done) return renderDone();
     var y = window.scrollY, v = view(); S.refs = [];
     if (!isOpen()) v.appendChild(note('warn', 'Claiming is closed right now. If you think it should be open, please see the GP Sports team.'));
@@ -415,9 +437,9 @@ function faceCount(f, canvas, quarters) {
   }
 
   function amendBanner() {
-    var b = note('', ''); b.style.marginTop = '18px';
-    b.appendChild(document.createTextNode('Changing claim '));
-    b.appendChild(el('strong', null, S.amend));
+    var b = note('', ''), c = S.data.claims.filter(function (x) { return x.code === S.amend; })[0]; b.style.marginTop = '18px';
+    b.appendChild(document.createTextNode('Changing your claim for '));
+    b.appendChild(el('strong', null, c ? c.teamLabels.join(' + ') : 'your team'));
     b.appendChild(document.createTextNode('. Your photo is kept unless you add a new one. '));
     var x = el('button', 'linklike', 'Cancel'); x.type = 'button'; x.onclick = function () { resetForm(); render(); }; b.appendChild(x);
     return b;
@@ -428,8 +450,8 @@ function faceCount(f, canvas, quarters) {
     // Companies field 1 to 4 teams (a second squad in a division is common), so the wording follows the count.
     var hint = n === 1 ? 'Tick your team to continue.'
       : n === 2 ? 'Tick one or both. If a colleague already claimed the other team, that’s fine — just take yours.'
-      : 'Tick every team you’re collecting for. Several together is fine, or each team’s captain can claim their own on this same link. A team a colleague has already claimed is greyed out.';
-    sec.appendChild(el('h2', null, n === 1 ? '2. Your team' : '2. Which teams are you collecting for?'));
+      : 'Tick every team you’re claiming for. Several together is fine, or each team’s captain can claim their own on this same link. A team a colleague has already claimed is greyed out.';
+    sec.appendChild(el('h2', null, n === 1 ? '2. Your team' : '2. Which teams are you claiming for?'));
     sec.appendChild(el('p', 'muted small', hint)).style.margin = '4px 0 12px';
     var grid = el('div', 'stack');
     S.data.teams.forEach(function (t) {
@@ -438,7 +460,7 @@ function faceCount(f, canvas, quarters) {
       b.disabled = locked || !isOpen();
       b.appendChild(el('span', 'tick', on ? '✓' : ''));
       var txt = el('span', 'grow'); txt.appendChild(el('span', 'strong block', t.label));
-      txt.appendChild(el('span', 'muted small block', t.claimedBy ? (t.claimedBy.collected ? 'Collected · ' : (S.amend === t.claimedBy.code ? 'Changing this claim · ' : 'Claimed by a colleague · ')) + t.claimedBy.code : t.entitlement + ' shirts'));
+      txt.appendChild(el('span', 'muted small block', t.claimedBy ? (t.claimedBy.collected ? 'Shirts handed out' : S.amend === t.claimedBy.code ? 'Changing this claim' : 'Claimed by a colleague') : t.entitlement + ' shirts'));
       b.appendChild(txt);
       b.onclick = function () { if (S.picked[t.key]) delete S.picked[t.key]; else S.picked[t.key] = true; changed(); render(); };
       grid.appendChild(b);
@@ -451,7 +473,7 @@ function faceCount(f, canvas, quarters) {
     var sec = el('section', 'sec');
     var e = ent(), c = cap(), f = faces();
     sec.appendChild(el('h2', null, '3. Choose ' + (c < e ? 'up to ' : '') + c + ' shirt' + (c === 1 ? '' : 's')));
-    var help = 'Sizes are limited and shared across all 75 teams — this is live stock, first come first served. Just pick your sizes: GP Sports chooses the design for you. You can change your picks until you collect.';
+    var help = 'Sizes are limited and shared across all 75 teams — this is live stock, first come first served. Just pick your sizes: GP Sports chooses the design for you. You can change your picks until your shirts are handed out.';
     if (c < e && f != null) help = 'Your photo shows ' + f + (f === 1 ? ' person' : ' people') + ', so that is how many shirts you can claim (your team allowance is ' + e + '). ' + help;
     sec.appendChild(dealBanner());
     sec.appendChild(el('p', 'muted small', help)).style.margin = '12px 0 12px';
@@ -514,7 +536,7 @@ function faceCount(f, canvas, quarters) {
     var p = el('p', 'muted small'); p.style.margin = '4px 0 0';
     p.appendChild(document.createTextNode('The shirts are free — the photo is how you pay for them. Take a group shot of your team at the opening ceremony '));
     p.appendChild(el('strong', null, 'with your company flag'));
-    p.appendChild(document.createTextNode(', then add it here.' + (S.data.teams.length > 1 ? ' Claiming for more than one team? One shot of everyone together is fine — or each team can claim separately with its own photo.' : '') + ' GP Sports staff use it at the counter to check your claim. Your phone also counts the people in it (nothing is uploaded for that), and you can claim one shirt for each person counted, so get everyone in the shot, facing the camera.'));
+    p.appendChild(document.createTextNode(', then add it here.' + (S.data && S.data.teams.length > 1 ? ' Claiming for more than one team? One shot of everyone together is fine — or each team can claim separately with its own photo.' : '') + ' GP Sports staff use it to check your claim. Your phone also counts the people in it (nothing is uploaded for that), and you can claim one shirt for each person counted, so get everyone in the shot, facing the camera.'));
     sec.appendChild(p);
     var box = el('div', 'photobox'); box.id = 'photobox'; sec.appendChild(box);
     fillPhotoBox(box);
@@ -530,6 +552,8 @@ function faceCount(f, canvas, quarters) {
     box.textContent = ''; box.className = 'photobox' + (photoOk() ? ' ok' : '');
     if (S.photo) {
       box.appendChild(shot(S.photo, S.photoBusy));   // (busy: a new photo is being prepared — the old one's count no longer applies)
+      var ck = S.photo.check;
+      if (!S.photoBusy && ck && ck.state === 'done' && ck.thumbs.length) box.appendChild(ck.row = ck.row || faceRow(ck.thumbs));
       var l = el('label', 'retake', 'Retake'); l.appendChild(fileInput()); box.appendChild(l);
       box.appendChild(S.photoBusy ? el('p', 'muted small', 'Preparing your new photo…') : checkBlock());
     } else if (S.amend) {
@@ -570,6 +594,28 @@ function faceCount(f, canvas, quarters) {
     return wrap;
   }
 
+  // The people counted, one portrait each, in a row under the photo (like the People row of a phone's gallery): someone small at the
+  // back is easy to miss in the preview, so this is where the captain checks the count. Cut out of the FULL-SIZE photo, which is far
+  // sharper than the preview for faces far from the camera, in reading order (facecount.js). Shown on the page only, never sent.
+  function faceThumbs(full, scale, boxes) {
+    try {
+      var W = full.naturalWidth, H = full.naturalHeight;
+      return fcReadingOrder(boxes).map(function (b) {
+        var side = Math.min(Math.max(b.w, b.h) * 1.6 / scale, W, H), cx = (b.x + b.w / 2) / scale, cy = (b.y + b.h / 2) / scale;
+        var sx = Math.max(0, Math.min(cx - side / 2, W - side)), sy = Math.max(0, Math.min(cy - side / 2, H - side));
+        var c = document.createElement('canvas'); c.width = c.height = 112;
+        c.getContext('2d').drawImage(full, sx, sy, side, side, 0, 0, 112, 112);
+        var url = c.toDataURL('image/jpeg', 0.85); c.width = c.height = 0;   // freed at once: iPhones cap the memory all canvases share
+        return url;
+      });
+    } catch (e) { return []; }   // no portraits is fine: the count and the boxes on the photo stand
+  }
+  function faceRow(thumbs) {
+    var row = el('div', 'faces'); row.setAttribute('role', 'list'); row.setAttribute('aria-label', 'The ' + thumbs.length + ' people counted');
+    thumbs.forEach(function (src, i) { var im = el('img'); im.src = src; im.alt = 'Person ' + (i + 1); im.setAttribute('role', 'listitem'); row.appendChild(im); });
+    return row;
+  }
+
   // Shrink in the browser before it leaves the phone: the hall will be on crowded mobile data and this upload is mandatory.
   function readPhoto(file) {
     S.photoBusy = true; S.error = ''; fillPhotoBox(); updateBar();
@@ -587,8 +633,8 @@ function faceCount(f, canvas, quarters) {
         S.photo = { mime: 'image/jpeg', b64: data.slice(data.indexOf(',') + 1), preview: data };
         changed();
       } catch (e) { return fail(); }
-      URL.revokeObjectURL(url); S.photoBusy = false; fillPhotoBox(); updateBar();
-      startCheck(c);
+      S.photoBusy = false; fillPhotoBox(); updateBar();
+      startCheck(c, img, function () { URL.revokeObjectURL(url); });   // the full-size photo is kept until its faces are cut out
     };
     img.src = url;
   }
@@ -632,16 +678,17 @@ function faceCount(f, canvas, quarters) {
     var slow = new Promise(function (ok, no) { setTimeout(function () { no(new Error('the check took too long')); }, 40000); });
     return Promise.race([run, slow]);
   }
-  function startCheck(canvas) {
-    var mine = S.photo; if (!mine) return;
+  function startCheck(canvas, full, release) {
+    var mine = S.photo; if (!mine) return release();
     mine.check = { state: 'running' }; render();   // the teams and shirts steps wait for the count
     var later = setTimeout(function () { if (S.photo === mine && mine.check.state === 'running') { mine.check.slow = true; fillPhotoBox(); } }, 8000);
     checkPhoto(canvas).then(function (r) {
       clearTimeout(later);
-      if (S.photo !== mine) return;   // a newer photo replaced this one while it was being checked
-      mine.check = { state: 'done', faces: r.faces, boxes: r.boxes, w: canvas.width, h: canvas.height }; changed(); render();
+      if (S.photo !== mine) return release();   // a newer photo replaced this one while it was being checked
+      mine.check = { state: 'done', faces: r.faces, boxes: r.boxes, w: canvas.width, h: canvas.height, thumbs: faceThumbs(full, canvas.width / full.naturalWidth, r.boxes) };
+      release(); changed(); render();
     }, function () {
-      clearTimeout(later);
+      clearTimeout(later); release();
       if (S.photo !== mine) return;
       mine.check = { state: 'failed' }; changed(); render();
     });
@@ -652,12 +699,12 @@ function faceCount(f, canvas, quarters) {
       wrap.appendChild(el('p', 'muted small', ck && ck.slow ? 'Still counting… The first photo takes longer while your phone fetches the people counter (once). Please keep this page open.' : 'Counting the people in your photo…'));
       return wrap;
     }
-    if (ck.state === 'failed') { wrap.appendChild(el('p', 'muted small', 'The quick photo count isn’t available on this phone. No problem: you can go on, and GP Sports staff will look at your photo at the counter.')); return wrap; }
+    if (ck.state === 'failed') { wrap.appendChild(el('p', 'muted small', 'The quick photo count isn’t available on this phone. No problem: you can go on, and GP Sports staff will check your photo.')); return wrap; }
     var a = photoAdvice(ck), f = ck.faces;
     if (f > 0) wrap.appendChild(el('p', 'strong', 'We counted ' + f + (f === 1 ? ' person' : ' people') + '. You can claim one shirt per person, up to your team’s allowance.'));
     a.warnings.forEach(function (w) { wrap.appendChild(note('warn', w)); });
     if (f === 0) wrap.appendChild(el('p', 'muted small', 'Retake the photo to go on: shirts are claimed one per person in it.'));
-    else wrap.appendChild(el('p', 'muted small', 'Everyone counted has a yellow box on the photo. Someone missing? Retake it with everyone in the shot, facing the camera.'));
+    else wrap.appendChild(el('p', 'muted small', 'Everyone counted is boxed on the photo and in the row of faces under it. Someone missing? Retake it with everyone in the shot, facing the camera.'));
     return wrap;
   }
   function checkNote() {   // what the desk is told, in one line
@@ -674,9 +721,8 @@ function faceCount(f, canvas, quarters) {
     list.forEach(function (c) {
       var m = el('div', 'mini'), t = el('div', 'grow');
       t.appendChild(el('div', 'strong', c.teamLabels.join(' + ')));
-      var sub = el('div', 'muted small'); sub.appendChild(el('span', null, c.code)); sub.firstChild.style.fontFamily = 'ui-monospace, Menlo, monospace';
       var picked = c.lines.reduce(function (a, l) { return a + l.qty; }, 0);   // what it actually holds — a claim may take fewer than its allowance
-      sub.appendChild(document.createTextNode(' · ' + (c.status === 'collected' ? 'collected' : picked + (picked === 1 ? ' shirt' : ' shirts') + ' reserved'))); t.appendChild(sub);
+      t.appendChild(el('div', 'muted small', c.status === 'collected' ? 'Shirts handed out' : picked + (picked === 1 ? ' shirt' : ' shirts') + ' reserved'));
       m.appendChild(t);
       if (c.status !== 'collected' && isOpen()) { var b = el('button', 'btn ghost slim', 'Change'); b.type = 'button'; b.onclick = function () { startAmend(c); }; m.appendChild(b); }
       wrap.appendChild(m);
@@ -710,12 +756,12 @@ function faceCount(f, canvas, quarters) {
     var snapshot = { teams: pickedTeams().map(function (t) { return t.label; }), lines: S.data.sizes.filter(function (z) { return S.qty[z] > 0; }).map(function (z) { return { size: z, qty: S.qty[z] }; }) };
     var req = who(); req.requestId = S.requestId; req.teamKeys = keys; req.lines = lines; req.amendCode = S.amend || null; req.photo = S.photo ? { mime: S.photo.mime, b64: S.photo.b64 } : null;
     if (S.photo) req.photoCheck = checkNote();   // (only with a NEW photo: an unchanged photo keeps the note it already has)
-    S.busy = true; S.error = ''; updateBar();
+    S.busy = true; S.error = ''; updateBar(); $('company').disabled = true;
     call('api_claim', req, 90000).then(function (res) {
-      S.busy = false;
+      S.busy = false; $('company').disabled = false;
       if (res.ok) {
         S.requestId = ''; S.done = { code: res.code, amended: !!res.amended, teams: snapshot.teams, lines: snapshot.lines };
-        renderDone(); load(true).then(function (ok) { if (ok && S.done) renderDone(); });
+        renderDone(); load(true).then(function (ok) { if (ok) render(); });   // (render: the captain may already have moved on — e.g. "Claim for another team too")
       } else {
         S.error = res.error || 'Something went wrong. Please try again.'; updateBar();
         if (res.kind === 'out_of_stock' || res.kind === 'already_claimed') load(true).then(function () { render(); });
@@ -723,7 +769,7 @@ function faceCount(f, canvas, quarters) {
         updateBar();
       }
     }, function () {
-      S.busy = false; S.error = 'Couldn’t send it — check your connection and tap the button again. Tapping again is safe: it won’t claim twice.'; updateBar();
+      S.busy = false; $('company').disabled = false; S.error = 'Couldn’t send it — check your connection and tap the button again. Tapping again is safe: it won’t claim twice.'; updateBar();
     });
   }
 
@@ -737,9 +783,9 @@ function faceCount(f, canvas, quarters) {
   function renderDone() {
     var d = S.done, v = view(); showBar(false);
     var card = el('div', 'card done'); card.style.marginTop = '20px';
-    card.appendChild(el('p', 'eyebrow', (d.amended ? 'Updated' : 'Reserved') + ' — ' + d.teams.join(' + ')));
-    card.appendChild(el('p', 'code', d.code)).style.margin = '8px 0';
-    card.appendChild(el('p', 'muted', 'Photo received. Show this code at the GP Sports counter to collect. Screenshot it — you’ll need it to change anything later.'));
+    card.appendChild(el('p', 'eyebrow', (d.amended ? 'Updated — ' : '') + d.teams.join(' + ')));
+    card.appendChild(el('p', 'reserved', 'Reserved!'));
+    card.appendChild(el('p', 'muted', 'GP Sports will distribute your shirts shortly.')).style.margin = '0';
     var tb = el('table', 'sum'), body = el('tbody'), n = 0;
     d.lines.forEach(function (l) { n += l.qty; var tr = el('tr'); tr.appendChild(el('td', null, l.qty + '×')); tr.appendChild(el('td', null, 'Size ' + l.size)); body.appendChild(tr); });
     var tr2 = el('tr'); tr2.appendChild(el('td', null, n + '×')); var tdt = el('td', null, 'total'); tdt.style.textAlign = 'left'; tdt.style.fontFamily = 'inherit'; tr2.appendChild(tdt); body.appendChild(tr2);
@@ -781,10 +827,13 @@ function faceCount(f, canvas, quarters) {
   }
   function pick(name) {
     S.company = name; try { localStorage.setItem('yx-company', name); } catch (e) {}
-    resetForm(); S.data = null; $('title').textContent = 'Claim your shirts'; document.title = 'Yonex bonus shirt – FTZ P.LAB Cup 2026';
+    // Another company has other teams and claims, so the teams ticked (and a claim being changed) go. The photo, its count and the
+    // sizes picked stay: a captain who picked the wrong company first does not have to add the photo again.
+    S.amend = ''; S.picked = {}; S.done = null; changed();
+    S.data = null; $('title').textContent = 'Claim your shirts'; document.title = 'Yonex bonus shirt – FTZ P.LAB Cup 2026';
     reload();
   }
-  function prompt_() { showBar(false); view().appendChild(el('p', 'center muted', 'Choose your company above to start.')).style.marginTop = '28px'; }
+  function prompt_() { renderWaiting('Choose your company above to start.'); }
   $('go').onclick = submit;
   document.addEventListener('visibilitychange', function () {
     if (document.hidden || !S.data || S.busy || S.photoBusy || S.done) return;
