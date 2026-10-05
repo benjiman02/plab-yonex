@@ -228,10 +228,13 @@ var COMPANY_LABELS = {"Analog Devices":"Analog Devices (ADI)","Efinix Technology
       (caps, hat brims), half-hidden or turned away — but it also sees far more bystanders. So it only ADDS a face that it is very
       sure of, that is the size of the group's faces, and that is not a face already counted. If YuNet cannot run on a phone (very
       old iOS), the count is SSD's alone.
+   3. Passers-by are left out (5 Oct 2026): a group of faces that stands apart from everyone else and is all small — people walking
+      behind, another team further back — is not the team (fcNoPassersBy).
    On 27 test photos with a known count (posed teams of 3 to 18, a 32-person lineup, group selfies, schoolgirls in tudung, the
    owner's own 15-person stand selfie, empty halls) this counts all 27 exactly — in Chrome and in WebKit (Safari's engine) alike;
    SSD alone got 23, and the very first counter (TinyFaceDetector) found nobody at all in the 15- and 18-person teams (README,
-   "Photo check"). The thresholds below were chosen on those photos.
+   "Photo check"). On 5 Oct the owner's ams OSRAM photo (12 players, 4 passers-by) counted 16; step 3 makes it 12, and changes
+   nothing on the others. The thresholds below were chosen on those photos.
    Pure geometry first (tested in Node), then the parts that need the browser. */
 var FACECOUNT = {
   MIN: 0.35,         // SSD's lowest score that is looked at
@@ -244,7 +247,9 @@ var FACECOUNT = {
   YN_MIN: 0.5,       // YuNet's lowest score that is looked at
   YN_NMS: 0.3,       // YuNet's own boxes overlapping this much are one face
   YN_ADD: 0.8,       // YuNet adds a face only from this score up …
-  YN_SIZE: 0.7       // … and only at least this fraction of the typical width of the faces SSD is sure of
+  YN_SIZE: 0.7,      // … and only at least this fraction of the typical width of the faces SSD is sure of
+  GROUP: 3.5,        // two faces stand together when their centres are within this many face widths (the average of the two) …
+  APART: 0.62        // … and a group in which every face is narrower than this fraction of the photo's typical face is passers-by
 };
 
 function fcOverlap(a, b) {   // { iou, iom }: the boxes' intersection over their union, and over the smaller box
@@ -311,6 +316,25 @@ function fcSecondOpinion(ssd, yn) {
   var ref = fcSureWidth(ssd);
   if (!ref) return ssd.slice();
   return fcAdd(ssd, yn.filter(function (b) { return b.score >= FACECOUNT.YN_ADD && b.w >= FACECOUNT.YN_SIZE * ref; }));
+}
+
+/* Passers-by. A team photo at the ceremony is taken with other people about — someone walking behind, another team further back at
+   the side. They stand apart from the team and further from the camera, so their faces are smaller. Faces that stand together
+   (centres within GROUP × their average width, linked through neighbours: a back row peeks between the front row, a long line links
+   person to person) form a group; a group in which EVERY face is small (under APART × the photo's typical face) is passers-by and is
+   not counted. So a small face standing with the team (the back row, someone half-hidden) stays, and so does anyone of normal size,
+   wherever they stand. On the test photos every setting from GROUP 2.5 to 4 and APART 0.55 to 0.7 counts them all right; these sit
+   in the middle. (The owner's ams OSRAM photo: the walkers at the left are 0.54 × the team's faces and 4.2 face-widths from it.) */
+function fcNoPassersBy(boxes) {
+  if (boxes.length < 3) return boxes.slice();   // too few faces to tell a group from passers-by
+  var ref = fcMedian(boxes.map(function (b) { return b.w; })), root = boxes.map(function (b, i) { return i; }), big = {};
+  function top(i) { while (root[i] !== i) i = root[i] = root[root[i]]; return i; }
+  for (var i = 0; i < boxes.length; i++) for (var j = i + 1; j < boxes.length; j++) {
+    var a = boxes[i], b = boxes[j], dx = a.x + a.w / 2 - b.x - b.w / 2, dy = a.y + a.h / 2 - b.y - b.h / 2;
+    if (Math.sqrt(dx * dx + dy * dy) <= FACECOUNT.GROUP * (a.w + b.w) / 2) root[top(i)] = top(j);
+  }
+  boxes.forEach(function (b, i) { if (b.w >= FACECOUNT.APART * ref) big[top(i)] = true; });
+  return boxes.filter(function (b, i) { return big[top(i)]; });
 }
 
 /* YuNet's raw output → face boxes. `out` maps 'cls_8' … 'bbox_32' to flat arrays (one value per grid cell, four per box), for an
@@ -394,6 +418,7 @@ function faceCount(f, canvas, quarters, yn) {
     if (!yn) return ssd;
     return ynRun(yn.ort, yn.session, canvas).then(function (y) { looks++; return fcSecondOpinion(ssd, y); }, function () { return ssd; });
   }).then(function (kept) {
+    kept = fcNoPassersBy(kept);
     return { faces: kept.length, boxes: kept, looks: looks };
   });
 }
