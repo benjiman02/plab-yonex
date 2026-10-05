@@ -117,7 +117,8 @@ label.lbl { display: block; margin: 0 0 6px; font-size: 14px; font-weight: 600; 
 .done h2 { margin: 0; font-size: 28px; line-height: 1.15; }
 .done .msg { margin: 10px 0 0; font-size: 17px; font-weight: 600; line-height: 1.4; }
 .pick { display: flex; align-items: center; justify-content: center; padding: 30px 10px; border: 2px dashed var(--line); border-radius: 12px; color: var(--brand); font-weight: 700; cursor: pointer; }
-.pick input, .retake input, .linklike input { display: none; }
+.pick input, .retake input, .linklike input, label.btn input { display: none; }
+label.btn { display: flex; align-items: center; justify-content: center; }
 .retake { display: inline-block; margin-top: 10px; padding: 8px 16px; border: 1.5px solid var(--line); border-radius: 10px; background: var(--bg); font-size: 14px; font-weight: 600; cursor: pointer; }
 .choice { display: flex; align-items: center; gap: 12px; width: 100%; padding: 14px; text-align: left; font: inherit; color: inherit; background: var(--card); border: 1.5px solid var(--line); border-radius: 14px; cursor: pointer; }
 .choice[aria-checked=true] { border-color: var(--brand); background: var(--brand-soft); }
@@ -635,16 +636,25 @@ function faceCount(f, canvas, quarters, yn) {
     var c = claimOf(S.amend), head = el('section', 'sec');
     head.appendChild(el('h2', null, 'Change sizes' + (c && c.teamLabels.length ? ' — ' + c.teamLabels.join(' + ') : '')));
     var p = el('p', 'muted small'); p.style.margin = '4px 0 0';
-    p.appendChild(document.createTextNode(S.data.company.name + (c ? ' · now ' + sizesText(c.lines) : '') + (S.photo ? '. The new photo replaces the old one. ' : '. Your photo is kept. ')));
+    p.appendChild(document.createTextNode(S.data.company.name + (c ? ' · now ' + sizesText(c.lines) : '') + (S.photo ? '. The new photo replaces the old one when you save. ' : '. Your photo is kept. ')));
+    if (S.photo) {   // changed their mind about the new photo: back to the old one, the sizes as they are
+      var k = el('button', 'linklike', 'Keep the old photo'); k.type = 'button'; p.appendChild(k); p.appendChild(document.createTextNode(' · '));
+      k.onclick = function () {   // (picks the old photo cannot cover go back to the claim's sizes, rather than "remove 3 shirts" to puzzle out)
+        S.photo = null; changed();
+        if (total() > cap() && c) { S.qty = {}; c.lines.forEach(function (l) { S.qty[l.size] = (S.qty[l.size] || 0) + l.qty; }); }
+        render();
+      };
+    }
     var x = el('button', 'linklike', 'Cancel'); x.type = 'button'; x.onclick = function () { resetForm(); render(); window.scrollTo(0, 0); }; p.appendChild(x);
     head.appendChild(p); v.appendChild(head);
     if (!canChange()) { v.appendChild(note('warn', changesText())).style.marginTop = '14px'; showBar(false); return; }   // (closed while this was open)
     if (S.photo) { renderNew(v); return; }   // a new photo: as for a new claim (photo → people → sizes)
+    // Resubmitting the photo (the owner, 5 Oct: "allow them to resubmit photo if want amend t-shirt size"): more or fewer people
+    // now, or a better photo — it is counted again, and the sizes follow the new count.
+    var again = el('section', 'sec'), btn = el('label', 'btn ghost', '📷\u00a0\u00a0Resubmit team photo'); btn.appendChild(fileInput()); again.appendChild(btn);
+    again.appendChild(el('p', 'muted small', 'More or fewer people in the team now, or a better photo? Send a new one: it is counted again, one shirt per person in it.')).style.margin = '8px 0 0';
+    v.appendChild(again);
     v.appendChild(shirtsSection());
-    var more = el('p', 'muted small'); more.style.marginTop = '18px';
-    more.appendChild(document.createTextNode('More or fewer people in the team now? '));
-    var l = el('label', 'linklike', 'Add a new team photo'); l.appendChild(fileInput()); more.appendChild(l);
-    v.appendChild(more);
     showBar(true); updateShirts(); updateBar();
   }
 
