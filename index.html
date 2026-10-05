@@ -577,6 +577,11 @@ function faceCount(f, canvas, quarters, yn) {
     var sec = el('section', 'sec'), teams = S.data.teams, free = teams.filter(function (t) { return !t.claimedBy; }), shown = {};
     sec.appendChild(el('h2', null, teams.length > 1 && free.length && left() > 0 && isOpen() ? 'Your team — tap it' : 'Your team'));
     var list = el('div', 'stack'); list.style.marginTop = '10px';
+    if (S.data.claims.length > 1) {   // more than one claim (each team its own): the company's shirts all together first
+      var all = []; S.data.claims.forEach(function (c) { all = all.concat(c.lines); });
+      var sum = el('div', 'claim'); sum.appendChild(el('div', 'strong', 'All of ' + S.data.company.name + ' · ' + nOf_(all.reduce(function (a, l) { return a + l.qty; }, 0), 'shirt', 'shirts')));
+      sum.appendChild(el('div', 'sizes', sizesText(all))); list.appendChild(sum);
+    }
     teams.forEach(function (t) {
       if (!t.claimedBy) return list.appendChild(teamChoice(t, teams.length === 1));
       var c = claimOf(t.claimedBy.code);

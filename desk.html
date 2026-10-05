@@ -101,6 +101,12 @@ table.grid td.na { color: var(--muted); }
 .dco h3 span { font-size: 13px; font-weight: 600; color: var(--muted); }
 .dcl + .dcl { margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--line); }
 .dcl .what { font-size: 15px; font-weight: 600; }
+.dco .csz { margin: -2px 0 10px; font-size: 14px; font-weight: 700; }
+table.grid.bycompany td:last-child, table.grid.bycompany th:last-child { font-weight: 800; }
+.scrollx { overflow-x: auto; -webkit-overflow-scrolling: touch; }   /* a wide table scrolls sideways; the page itself never does */
+table.grid.bycompany th, table.grid.bycompany td { padding: 8px 7px; white-space: nowrap; }
+table.grid.bycompany th:first-child, table.grid.bycompany td:first-child { position: sticky; left: 0; background: var(--card); }
+table.grid tr.sum td { font-weight: 800; border-top: 2px solid var(--line); }
 .dcl .box { display: none; width: 14px; height: 14px; border: 1.5px solid currentColor; border-radius: 3px; margin-right: 6px; vertical-align: -2px; }
 .printonly { display: none; }
 @media print {
@@ -110,6 +116,7 @@ table.grid td.na { color: var(--muted); }
   .wrap { max-width: none; padding: 0; }
   .card { border: 1px solid #888; border-radius: 6px; padding: 10px; }
   .dco { break-inside: avoid; }
+  .scrollx { overflow: visible; }
   .printonly { display: block; }
   .dcl .box { display: inline-block; }
   .note.warn { border: 1px solid #b07a00; }
@@ -395,11 +402,14 @@ function photoNoteText(check) {
       });
       var trT = el('tr'); trT.appendChild(el('td', null, 'Total')); designs.forEach(function (d) { trT.appendChild(el('td', null, String(colTot[d]))).style.fontWeight = '800'; }); trT.appendChild(el('td', null, String(shirts))).style.fontWeight = '800'; body.appendChild(trT);
       tb.appendChild(body); pick.appendChild(el('p', 'small muted', 'To pull from the boxes')).style.margin = '0 0 6px'; pick.appendChild(tb); box.appendChild(pick);
-      // one card per company, one block per claim
+      // the sizes by company: one row per company, its shirts by size (every team and design together) — the summary of each order
       var companies = []; list.forEach(function (c) { if (companies.indexOf(c.company) < 0) companies.push(c.company); });
+      box.appendChild(sizesByCompany(list, companies, sizes));
+      // one card per company, one block per claim
       companies.forEach(function (name) {
         var mine = list.filter(function (c) { return c.company === name; }), card = el('div', 'card dco'), h = el('h3', null, name);
         h.appendChild(el('span', null, mine.reduce(function (a, c) { return a + c.total; }, 0) + ' shirts')); card.appendChild(h);
+        card.appendChild(el('div', 'csz', (mine.length > 1 ? 'All teams: ' : '') + sizesOf(mine)));   // the company's shirts by size
         mine.forEach(function (c) {
           var blk = el('div', 'dcl'), head = el('div', 'what');
           head.appendChild(el('span', 'box')); head.appendChild(document.createTextNode(what(c)));
@@ -424,6 +434,31 @@ function photoNoteText(check) {
         box.appendChild(card);
       });
     }, function (e) { box.textContent = ''; if (e.message !== 'auth') box.appendChild(note('bad', 'Couldn’t load. Check the connection.')); });
+  }
+
+  // A company's (or any claims') shirts by size, in size order: "5 × S, 10 × M, 7 × L" (every design of a size together).
+  function sizesOf(claims) {
+    var by = {}; claims.forEach(function (c) { c.lines.forEach(function (l) { by[l.size] = (by[l.size] || 0) + l.qty; }); });
+    return SIZE_ORDER.filter(function (z) { return by[z]; }).map(function (z) { return by[z] + ' × ' + z; }).join(', ');
+  }
+  // The table: Company | each size | Total, with a total row — what each company ordered, at a glance (and on paper).
+  function sizesByCompany(list, companies, sizes) {
+    var card = el('div', 'card'), tb = el('table', 'grid bycompany'), hd = el('tr'), thead = el('thead'), body = el('tbody'), colTot = {}, all = 0;
+    hd.appendChild(el('th', null, 'Company')); sizes.forEach(function (z) { hd.appendChild(el('th', null, z)); }); hd.appendChild(el('th', null, 'Total'));
+    thead.appendChild(hd); tb.appendChild(thead);
+    companies.slice().sort(function (a, b) { return a.localeCompare(b); }).forEach(function (name) {
+      var by = {}, n = 0, tr = el('tr');
+      list.filter(function (c) { return c.company === name; }).forEach(function (c) { c.lines.forEach(function (l) { by[l.size] = (by[l.size] || 0) + l.qty; n += l.qty; }); });
+      tr.appendChild(el('td', null, name));
+      sizes.forEach(function (z) { var q = by[z] || 0; colTot[z] = (colTot[z] || 0) + q; tr.appendChild(el('td', q ? '' : 'na', q ? String(q) : '–')); });
+      tr.appendChild(el('td', null, String(n))); all += n; body.appendChild(tr);
+    });
+    var sum = el('tr', 'sum'); sum.appendChild(el('td', null, 'All'));
+    sizes.forEach(function (z) { sum.appendChild(el('td', null, String(colTot[z] || 0))); }); sum.appendChild(el('td', null, String(all))); body.appendChild(sum);
+    tb.appendChild(body);
+    var wrap = el('div', 'scrollx'); wrap.appendChild(tb);
+    card.appendChild(el('p', 'small muted', 'Sizes by company')).style.margin = '0 0 6px'; card.appendChild(wrap); card.style.marginTop = '12px';
+    return card;
   }
 
   // ---------- stock ----------
