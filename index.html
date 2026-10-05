@@ -129,6 +129,7 @@ label.lbl { display: block; margin: 0 0 6px; font-size: 14px; font-weight: 600; 
 .claim .sizes { margin: 3px 0 2px; font-size: 16px; font-weight: 700; }
 .claim .btn { margin-top: 12px; }
 .done .btn { margin-top: 20px; }
+.done .btn + p + .btn { margin-top: 12px; }
 .bar { position: fixed; left: 0; right: 0; bottom: 0; z-index: 5; background: var(--card); border-top: 1px solid var(--line); padding: 12px 16px calc(12px + env(safe-area-inset-bottom)); }
 .bar .in { display: flex; align-items: center; gap: 12px; max-width: 640px; margin: 0 auto; }
 .bar .btn { width: auto; height: 46px; padding: 0 22px; flex: none; }
@@ -486,6 +487,13 @@ function faceCount(f, canvas, quarters, yn) {
   // The photo comes first: the next steps show once it is counted (or the count could not be made). Changing a claim keeps its photo.
   function photoReady() { return S.photo ? !!S.photo.check && S.photo.check.state !== 'running' : !!S.amend; }
   function isOpen() { return S.data.open !== false; }
+  // Changing sizes: open until the deadline in Settings ("Changes until"), or until the shirts are handed out when there is none.
+  function canChange() { return isOpen() && S.data.changesOpen !== false; }
+  function changesText() {
+    var u = S.data && S.data.changesUntil ? when(S.data.changesUntil) : '';
+    if (S.data && !canChange()) return u ? 'Size changes closed on ' + u + '. For a change, please see the GP Sports team.' : 'Size changes are closed. For a change, please see the GP Sports team.';
+    return u ? 'Sizes can be changed until ' + u + '.' : 'Sizes can be changed until GP Sports hands out the shirts.';
+  }
   function view() { var v = $('view'); v.textContent = ''; return v; }
   function showBar(on) { $('bar').hidden = !on; $('wrap').className = 'wrap' + (on ? ' has-bar' : ''); }
   function num(k) { return S.amend ? '' : (S.token ? k - 1 : k) + '. '; }   // the claim steps as the captain sees them (an old private link has no company step)
@@ -576,9 +584,9 @@ function faceCount(f, canvas, quarters, yn) {
     });
     S.data.claims.filter(function (c) { return !c.teamKeys.length; }).forEach(function (c) { list.appendChild(claimCard(c)); });   // (claims made without a team, 5 Oct)
     sec.appendChild(list);
-    var tip = free.length > 1 && left() > 0 && isOpen() ? 'One photo of more than one team? Tick each of them.'
-      : !free.length || left() === 0 ? 'Every team at ' + S.data.company.name + ' has claimed. Sizes can be changed until GP Sports hands out the shirts.' : '';
-    if (tip) sec.appendChild(el('p', 'muted small', tip)).style.margin = '10px 0 0';
+    var waiting = S.data.claims.some(function (c) { return c.status !== 'collected'; });
+    var tip = (free.length > 1 && left() > 0 && isOpen() ? 'One photo of more than one team? Tick each of them. ' : !free.length || left() === 0 ? 'Every team at ' + S.data.company.name + ' has claimed. ' : '') + (waiting ? changesText() : '');
+    if (tip.trim()) sec.appendChild(el('p', 'muted small', tip.trim())).style.margin = '10px 0 0';
     return sec;
   }
   function teamChoice(t, only) {
@@ -599,7 +607,7 @@ function faceCount(f, canvas, quarters, yn) {
     card.appendChild(el('div', 'strong', (c.teamLabels.length ? c.teamLabels.join(' + ') + ' · ' : '') + nOf_(lineTotal(c), 'shirt', 'shirts') + (c.status === 'collected' ? ' · handed out' : ' · claimed')));
     card.appendChild(el('div', 'sizes', sizesText(c.lines)));
     card.appendChild(el('div', 'muted small', (when(c.created) ? 'Claimed ' + when(c.created) : 'Claimed') + (my ? ' on this phone' : '')));
-    if (c.status !== 'collected' && isOpen()) { var b = el('button', 'btn', 'Change sizes'); b.type = 'button'; b.onclick = function () { startAmend(c); }; card.appendChild(b); }
+    if (c.status !== 'collected' && canChange()) { var b = el('button', 'btn', 'Change sizes'); b.type = 'button'; b.onclick = function () { startAmend(c); }; card.appendChild(b); }
     return card;
   }
 
@@ -625,6 +633,7 @@ function faceCount(f, canvas, quarters, yn) {
     p.appendChild(document.createTextNode(S.data.company.name + (c ? ' · now ' + sizesText(c.lines) : '') + (S.photo ? '. The new photo replaces the old one. ' : '. Your photo is kept. ')));
     var x = el('button', 'linklike', 'Cancel'); x.type = 'button'; x.onclick = function () { resetForm(); render(); window.scrollTo(0, 0); }; p.appendChild(x);
     head.appendChild(p); v.appendChild(head);
+    if (!canChange()) { v.appendChild(note('warn', changesText())).style.marginTop = '14px'; showBar(false); return; }   // (closed while this was open)
     if (S.photo) { renderNew(v); return; }   // a new photo: as for a new claim (photo → people → sizes)
     v.appendChild(shirtsSection());
     var more = el('p', 'muted small'); more.style.marginTop = '18px';
@@ -969,7 +978,7 @@ function faceCount(f, canvas, quarters, yn) {
         renderDone(); load(true).then(function (ok) { if (ok) render(); });   // (render: the captain may already have moved on — e.g. "Change sizes")
       } else {
         S.error = res.error || 'Something went wrong. Please try again.'; updateBar();
-        if (res.kind === 'out_of_stock' || res.kind === 'already_claimed' || res.kind === 'over_allowance') load(true).then(function () { render(); });   // someone else just took them: show what is left
+        if (res.kind === 'out_of_stock' || res.kind === 'already_claimed' || res.kind === 'over_allowance' || res.kind === 'changes_closed') load(true).then(function () { render(); });   // someone else just took them, or changes just closed: show how things are now
         if (res.kind === 'busy') S.error = 'The system is busy — please tap Confirm again in a moment.';
         updateBar();
       }
@@ -1001,11 +1010,26 @@ function faceCount(f, canvas, quarters, yn) {
     card.appendChild(el('h2', null, d.amended ? 'Updated!' : 'Done!'));
     card.appendChild(el('p', 'msg', d.amended ? 'Your new sizes are saved. GP Sports will distribute the T-shirts soon.' : 'Your T-shirts are reserved. GP Sports will distribute them soon.'));
     card.appendChild(el('p', 'muted small', d.company + (d.teams ? ' · ' + d.teams : '') + ' · ' + nOf_(n, 'shirt', 'shirts') + ': ' + d.lines.map(function (l) { return l.qty + ' × ' + l.size; }).join(', '))).style.margin = '14px 0 0';
-    if (!S.data || isOpen()) {
+    var sh = el('button', 'btn', 'Share with my team'); sh.type = 'button'; sh.onclick = function () { share(shareText(d)); }; card.appendChild(sh);
+    card.appendChild(el('p', 'muted small', 'Sends the sizes to your team’s chat, so everyone can check theirs.')).style.margin = '8px 0 0';
+    if (!S.data || canChange()) {
       var b = el('button', 'btn ghost', 'Change sizes'); b.type = 'button'; b.onclick = function () { changeSizes(d.code, b); }; card.appendChild(b);
-      card.appendChild(el('p', 'muted small', 'Someone wants another size? Change it here until the shirts are handed out — or later: open this link again, pick ' + d.company + (d.teams ? ' and tap ' + d.teams : '') + '.')).style.margin = '10px 0 0';
-    }
+      var u = S.data && S.data.changesUntil ? when(S.data.changesUntil) : '';
+      card.appendChild(el('p', 'muted small', 'Someone wants another size? Change it ' + (u ? 'until ' + u : 'until the shirts are handed out') + ' — here, or later: open this link again, pick ' + d.company + (d.teams ? ' and tap ' + d.teams : '') + '.')).style.margin = '10px 0 0';
+    } else card.appendChild(el('p', 'muted small', changesText())).style.margin = '14px 0 0';
     v.appendChild(card);
+  }
+  // What "Share with my team" sends: the team's shirts by size, for players to check theirs — no link (it stays with the captains).
+  function shareText(d) {
+    var n = d.lines.reduce(function (a, l) { return a + l.qty; }, 0), u = S.data && S.data.changesUntil ? when(S.data.changesUntil) : '';
+    return 'Yonex P.LAB Cup shirts — ' + d.company + (d.teams ? ' ' + d.teams : '') + ': ' + nOf_(n, 'shirt', 'shirts') + '\n' +
+      d.lines.map(function (l) { return l.qty + ' × ' + l.size; }).join(', ') + '\n' +
+      'Reserved — GP Sports will distribute them soon.\n' + 'Wrong size? Tell your captain' + (u ? ' by ' + u : ' soon') + '.';
+  }
+  // The phone's own share sheet (WhatsApp, Telegram…); where there is none (a laptop), WhatsApp's share page with the text filled in.
+  function share(text) {
+    if (navigator.share) { navigator.share({ text: text }).then(null, function () {}); return; }
+    window.open('https://wa.me/?text=' + encodeURIComponent(text), '_blank', 'noopener');
   }
 
   // ---------- go ----------
