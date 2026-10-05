@@ -261,6 +261,9 @@ function photoNoteText(check) {
   // A claim in a few words: its teams, for a claim that named them (before 5 Oct 2026 — claims now draw on the company's
   // allowance without picking a team), and its shirts.
   function what(c) { return (c.teamLabels && c.teamLabels.length ? c.teamLabels.join(' + ') + ' · ' : '') + c.total + (c.total === 1 ? ' shirt' : ' shirts'); }
+  // Changed by the captain after it was claimed (players change sizes; the captain page makes it easy): a bag packed before then is
+  // out of date. Only for a claim still to hand out — handing out or cancelling also moves its "updated" time.
+  function changedAt(c) { return c.status === 'reserved' && c.updated && c.created && c.updated !== c.created ? c.updated : ''; }
   function badge(status) {
     var b = el('span', 'badge' + (status === 'reserved' ? ' ok' : status === 'cancelled' ? ' bad' : ''), status === 'reserved' ? 'Ready' : status === 'collected' ? 'Handed out' : 'Cancelled');
     return b;
@@ -271,6 +274,7 @@ function photoNoteText(check) {
     var head = el('div', 'row'); var h = el('h2', 'grow', c.company); head.appendChild(h); head.appendChild(badge(c.status)); card.appendChild(head);
     card.appendChild(el('p', 'muted', what(c))).style.margin = '4px 0 0';
     if (c.status === 'collected') card.appendChild(el('p', 'small muted', 'Handed out ' + c.collectedAt + ' by ' + c.collectedBy)).style.margin = '4px 0 0';
+    if (changedAt(c)) card.appendChild(note('warn', 'Changed by the captain ' + changedAt(c).slice(0, 16) + ' — hand over what is listed below.')).style.marginTop = '8px';
     if (c.status === 'cancelled') card.appendChild(el('p', 'small muted', 'Cancelled' + (c.note ? ': ' + c.note : ''))).style.margin = '4px 0 0';
 
     if (c.hasPhoto) {
@@ -339,7 +343,7 @@ function photoNoteText(check) {
         list.textContent = ''; var t = q.value.trim().toLowerCase(), n = 0;
         r.claims.filter(function (c) { return (filterBy === 'all' || c.status === filterBy) && (!t || c.company.toLowerCase().indexOf(t) >= 0 || c.code.toLowerCase().indexOf(t) >= 0); }).forEach(function (c) {
           n++; var it = el('button', 'item'); it.type = 'button'; var g = el('div', 'grow'); g.appendChild(el('div', 'strong', c.company));
-          g.appendChild(el('div', 'small muted', what(c) + ' · ' + c.created.slice(5, 16) + (c.flagged ? ' · photo check flagged' : '')));
+          g.appendChild(el('div', 'small muted', what(c) + ' · ' + c.created.slice(5, 16) + (changedAt(c) ? ' · changed ' + changedAt(c).slice(5, 16) : '') + (c.flagged ? ' · photo check flagged' : '')));
           it.appendChild(g); it.appendChild(el('span', 'c', c.code)); it.appendChild(badge(c.status));
           it.onclick = function () { tab('find'); $('code').value = c.code; find(c.code); }; list.appendChild(it);
         });
@@ -401,6 +405,7 @@ function photoNoteText(check) {
           head.appendChild(el('span', 'box')); head.appendChild(document.createTextNode(what(c)));
           blk.appendChild(head);
           blk.appendChild(el('div', null, c.lines.slice().sort(byDesignSize).map(function (l) { return l.qty + '× ' + l.design + ' ' + l.size; }).join(' · ')));
+          if (changedAt(c)) blk.appendChild(note('warn', 'Changed by the captain ' + changedAt(c).slice(5, 16) + ' — packed before then? Re-pack from this list.')).style.marginTop = '6px';
           if (c.flagged) blk.appendChild(note('warn', c.note.replace(/^Photo check \(phone estimate\): /, 'Photo check: '))).style.marginTop = '6px';
           blk.appendChild(el('div', 'small muted', c.code + ' · claimed ' + c.created.slice(5, 16) + (c.status === 'collected' ? ' · handed out ' + c.collectedAt.slice(5, 16) + (c.collectedBy ? ' by ' + c.collectedBy : '') : '')));
           if (c.status === 'reserved') {
