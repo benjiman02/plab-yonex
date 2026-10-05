@@ -73,13 +73,7 @@ label.lbl { display: block; margin: 0 0 6px; font-size: 14px; font-weight: 600; 
 
 .center { text-align: center; }
 .grow { flex: 1; min-width: 0; }
-.block { display: block; }
 .strong { font-weight: 700; font-size: 15px; }
-.choice { display: flex; align-items: center; gap: 12px; width: 100%; padding: 14px; text-align: left; font: inherit; color: inherit; background: var(--card); border: 1.5px solid var(--line); border-radius: 14px; cursor: pointer; }
-.choice[aria-checked=true] { border-color: var(--brand); background: var(--brand-soft); }
-.choice:disabled { opacity: .5; cursor: not-allowed; }
-.tick { flex: none; display: grid; place-items: center; width: 22px; height: 22px; border-radius: 6px; border: 1.5px solid var(--line); font-size: 13px; font-weight: 800; color: #fff; }
-.choice[aria-checked=true] .tick { background: var(--brand); border-color: var(--brand); }
 .sizecard { padding: 14px; background: var(--card); border: 1px solid var(--line); border-radius: 14px; }
 .sizecard h3 { margin: 0 0 10px; font-size: 16px; }
 .sizecard h3 span { float: right; font-size: 12px; font-weight: 400; color: var(--muted); }
@@ -101,7 +95,6 @@ label.lbl { display: block; margin: 0 0 6px; font-size: 14px; font-weight: 600; 
 .was { color: var(--muted); font-weight: 600; text-decoration: line-through; text-decoration-thickness: 2px; text-decoration-color: var(--bad); }
 .deal .was { display: inline-block; font-size: 26px; font-weight: 800; line-height: 1.1; font-variant-numeric: tabular-nums; text-decoration-thickness: 4px; }
 .deal .freebig { font-size: clamp(60px, 22vw, 92px); font-weight: 900; line-height: .95; letter-spacing: -.02em; color: var(--brand); }
-.yes { color: var(--brand); }
 .deal p { margin: 6px 0 0; }
 .photobox { margin-top: 12px; padding: 14px; background: var(--card); border: 1.5px solid var(--line); border-radius: 14px; }
 .photobox.ok { border-color: var(--ok); }
@@ -116,9 +109,13 @@ label.lbl { display: block; margin: 0 0 6px; font-size: 14px; font-weight: 600; 
 .faces { display: flex; gap: 8px; margin-top: 10px; padding: 2px; overflow-x: auto; scrollbar-width: none; -webkit-overflow-scrolling: touch; }
 .faces::-webkit-scrollbar { display: none; }
 .faces img { flex: none; width: 54px; height: 54px; border-radius: 50%; object-fit: cover; border: 2.5px solid var(--accent); background: var(--line); }
-.fix { margin-top: 2px; }
-.fix .line { padding: 10px 12px; border-radius: 12px; background: var(--brand-soft); }
-.done .reserved { margin: 6px 0 2px; font-size: 32px; font-weight: 900; line-height: 1.1; color: var(--ok); }
+.count { margin-top: 10px; }
+.count .line { padding: 12px 14px; border-radius: 14px; background: var(--brand-soft); }
+.count .big { font-size: 22px; font-weight: 800; line-height: 1.15; font-variant-numeric: tabular-nums; }
+.done { padding: 28px 18px 24px; }
+.done .tickbig { display: grid; place-items: center; width: 64px; height: 64px; margin: 0 auto 14px; border-radius: 50%; background: var(--brand); color: var(--brand-ink); font-size: 34px; font-weight: 900; }
+.done h2 { margin: 0; font-size: 28px; line-height: 1.15; }
+.done .msg { margin: 10px 0 0; font-size: 17px; font-weight: 600; line-height: 1.4; }
 .pick { display: flex; align-items: center; justify-content: center; padding: 30px 10px; border: 2px dashed var(--line); border-radius: 12px; color: var(--brand); font-weight: 700; cursor: pointer; }
 .pick input, .retake input { display: none; }
 .retake { display: inline-block; margin-top: 10px; padding: 8px 16px; border: 1.5px solid var(--line); border-radius: 10px; background: var(--bg); font-size: 14px; font-weight: 600; cursor: pointer; }
@@ -131,11 +128,6 @@ label.lbl { display: block; margin: 0 0 6px; font-size: 14px; font-weight: 600; 
 .bar .msg { font-size: 12.5px; color: var(--muted); }
 .bar .msg.ok { color: var(--ok); }
 .bar .err { max-width: 640px; margin: 8px auto 0; color: var(--bad); font-size: 14px; font-weight: 600; }
-.done .eyebrow { color: var(--ok); }
-table.sum { width: 100%; margin-top: 12px; border-collapse: collapse; font-size: 14px; }
-table.sum td { padding: 7px 0; border-top: 1px solid var(--line); }
-table.sum td:first-child { font-weight: 700; width: 44px; }
-table.sum td:last-child { text-align: right; font-family: ui-monospace, Menlo, monospace; }
 </style>
 </head>
 <body>
@@ -147,7 +139,7 @@ table.sum td:last-child { text-align: right; font-family: ui-monospace, Menlo, m
     <p id="sub">Exclusive P.LAB Yonex shirts. Each one is RM49.90, and GP Sports, the organiser, is paying for yours.</p>
   </header>
   <section class="card" id="picker" hidden style="margin-top:14px">
-    <label class="lbl" for="company">Your company</label>
+    <label class="lbl" for="company">1. Choose your company</label>
     <select id="company"></select>
   </section>
   <div id="view"><p class="center muted" style="margin-top:30px"><span class="spin"></span>Loading…</p></div>
@@ -190,9 +182,9 @@ function call(fn, arg, ms, tries) {
 }
 
 /* ---- the photo check's advice (pure, so it is tested on its own) ----
-   `check` = { faces, said } — faces as counted ON THE PHONE; said = how many people the captain says are in the photo, when the
-   counter missed someone (only a number above the count is taken). The count is what limits the shirts (cap() in the page); this
-   only adds a warning when the photo looks wrong for a team photo, and tells the desk when the captain corrected the count.
+   `check` = { faces, said } — faces as counted ON THE PHONE; said = how many people the captain says are in the photo, when they
+   corrected the count (0 or missing = they did not). The number limits the shirts (cap() in the page); this only adds a warning
+   when the photo looks wrong for a team photo, and flags it for the desk when the captain says MORE people than were counted.
    (There used to be a men/women guess too. It was dropped on 3 Oct 2026: on test photos it called 17 of 18 players of a women's
    team "men", and it would have told that team it looked like a men's team.)
    Returns { warnings: [texts for the captain], short: [phrases for the desk's one-line note] }. */
@@ -210,12 +202,13 @@ function photoAdvice(check) {
   return out;
 }
 
-/* The one line the desk sees next to the photo, e.g. "11 faces", "2 faces · CHECK: only 2 faces", or "11 faces · CHECK: captain says
-   13 people". The server reads the count from it (facesFromCheck_ in src/Api.js): the captain's number when there is one, else the
-   "<number> face(s)" it must start with. */
+/* The one line the desk sees next to the photo, e.g. "11 faces", "2 faces · CHECK: only 2 faces", "11 faces · CHECK: captain says
+   13 people", or "17 faces · captain says 15 people" (fewer than counted — a bystander was counted: noted, not flagged). The server
+   reads the count from it (facesFromCheck_ in src/Api.js): the captain's number when there is one, else the "<number> face(s)" it
+   must start with. */
 function photoNoteText(check) {
-  var a = photoAdvice(check);
-  return nOf_(check.faces, 'face', 'faces') + (a.short.length ? ' · CHECK: ' + a.short.join('; ') : '');
+  var a = photoAdvice(check), fewer = check.said > 0 && check.said < check.faces;
+  return nOf_(check.faces, 'face', 'faces') + (fewer ? ' · captain says ' + nOf_(check.said, 'person', 'people') : '') + (a.short.length ? ' · CHECK: ' + a.short.join('; ') : '');
 }
 
 </script>
@@ -408,16 +401,21 @@ function faceCount(f, canvas, quarters, yn) {
 </script>
 <script>
 (function () {
-  var S = { token: '', company: '', data: null, picked: {}, qty: {}, photo: null, photoBusy: false, deal: null, amend: '', busy: false, requestId: '', error: '', done: null, refs: [] };
+  var S = { token: '', company: '', data: null, qty: {}, photo: null, photoBusy: false, deal: null, amend: '', busy: false, requestId: '', error: '', done: null, refs: [] };
 
   // ---------- small helpers ----------
   var PRICE_CENTS = 4990;   // what one shirt costs in the shop (RM49.90); the captain pays nothing, the organiser does
   function rm(cents) { return 'RM' + (cents / 100).toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ','); }
   function note(kind, text) { return el('p', 'note ' + kind, text); }
   function changed() { S.requestId = ''; S.error = ''; }   // any edit makes the next Confirm a new request
-  function pickedTeams() { return S.data.teams.filter(function (t) { return S.picked[t.key]; }); }
-  function anyPicked() { return pickedTeams().length > 0; }
-  function ent() { return pickedTeams().reduce(function (a, t) { return a + t.entitlement; }, 0); }
+  function lineTotal(c) { return c.lines.reduce(function (a, l) { return a + l.qty; }, 0); }   // the shirts a claim actually holds
+  // The flow (the owner's, 5 Oct 2026): choose the company → add the team photo → the phone counts the people (the captain can fix
+  // the number) → choose sizes → done. No team is picked: a company's teams add up to one allowance (12 shirts per men's team, 8 per
+  // women's), and every claim at the company draws on it, one shirt per person in its photo.
+  function allowance() { return S.data.allowance != null ? S.data.allowance : S.data.teams.reduce(function (a, t) { return a + t.entitlement; }, 0); }
+  function left() {   // what the company still has to claim — the claim being changed is left out (its own shirts are free for it)
+    return Math.max(0, allowance() - S.data.claims.filter(function (c) { return c.code !== S.amend; }).reduce(function (a, c) { return a + lineTotal(c); }, 0));
+  }
   function total() { return Object.keys(S.qty).reduce(function (a, k) { return a + S.qty[k]; }, 0); }
   // The captain picks SIZES only (the server chooses the design), so stock is counted per size: every design of that size together.
   function held() {   // size -> how many of that size the claim being changed already holds
@@ -428,17 +426,18 @@ function faceCount(f, canvas, quarters, yn) {
   function available(size) { return S.data.stock.filter(function (r) { return r.size === size; }).reduce(function (a, r) { return a + r.available; }, 0); }
   function headroom(size) { return available(size) + (held()[size] || 0); }   // what this claim already holds is free for it to keep
   function photoOk() { return !!S.photo || !!S.amend; }
-  // The headcount rule: the photo's people decide how many shirts can be claimed (never more than the team allowance).
-  // faces() = how many people the phone counted, or null when nobody has counted (the check could not run, or an older claim has no count).
+  // The headcount rule: the photo's people decide how many shirts can be claimed (never more than the company has left).
+  // faces() = how many people are in the photo, or null when nobody has counted (the check could not run, or an older claim has no count).
+  function people(ck) { return ck.said > 0 ? ck.said : ck.faces; }   // the captain's number when they fixed the count, else the phone's
   function faces() {
-    if (S.photo) { var ck = S.photo.check; return ck && ck.state === 'done' ? (ck.said > ck.faces ? ck.said : ck.faces) : null; }   // the captain's number when they corrected the count
+    if (S.photo) { var ck = S.photo.check; return ck && ck.state === 'done' ? people(ck) : null; }
     var c = S.amend && S.data.claims.filter(function (x) { return x.code === S.amend; })[0];
     return c && typeof c.faces === 'number' ? c.faces : null;
   }
   function heldTotal() { var h = held(); return Object.keys(h).reduce(function (a, k) { return a + h[k]; }, 0); }
   // How many shirts may be picked. Keeping the old photo never takes away shirts the claim already holds; a new photo is counted afresh.
   function cap() {
-    var e = ent(), f = faces();
+    var e = left(), f = faces();
     if (f == null) return e;
     return Math.max(Math.min(e, f), S.photo ? 0 : heldTotal());
   }
@@ -447,6 +446,8 @@ function faceCount(f, canvas, quarters, yn) {
   function isOpen() { return S.data.open !== false; }
   function view() { var v = $('view'); v.textContent = ''; return v; }
   function showBar(on) { $('bar').hidden = !on; $('wrap').className = 'wrap' + (on ? ' has-bar' : ''); }
+  function num(k) { return (S.token ? k - 1 : k) + '. '; }   // the steps as the captain sees them (an old private link has no company step)
+  function hint(text) { var p = el('p', 'muted small center', text); p.style.marginTop = '28px'; return p; }
   // While a company's teams load (or before one is chosen) a photo already added stays on screen: switching company keeps it.
   function renderWaiting(msg) {
     var v = view(); showBar(false);
@@ -494,77 +495,64 @@ function faceCount(f, canvas, quarters, yn) {
     if (!S.data) return renderWaiting();   // (a photo count can finish while a newly picked company is still loading)
     if (S.done) return renderDone();
     var y = window.scrollY, v = view(); S.refs = [];
+    var others = S.data.claims.filter(function (c) { return c.code !== S.amend; });
     if (!isOpen()) v.appendChild(note('warn', 'Claiming is closed right now. If you think it should be open, please see the GP Sports team.'));
     if (S.amend) v.appendChild(amendBanner());
-    v.appendChild(photoSection());   // step 1: the photo, and the headcount from it
-    if (isOpen() && (S.amend || S.data.teams.some(function (t) { return !t.claimedBy; }))) prepareFaceLib();   // a photo may be coming: get the counter ready
-    var ready = photoReady(), empty = ready && !!S.photo && faces() === 0;   // empty: nobody was counted, so there is nothing to claim yet
-    if (!ready || empty) v.appendChild(el('p', 'muted small center', empty ? 'Retake your photo to continue.' : S.photo ? 'Counting the people in your photo…' : 'Add your team photo to continue.')).style.marginTop = '28px';
-    else {
-      v.appendChild(teamsSection());   // step 2
-      if (anyPicked()) v.appendChild(shirtsSection());   // step 3: capped by the headcount
-      else v.appendChild(el('p', 'muted small center', 'Pick a team above to continue.')).style.marginTop = '28px';
+    if (!S.amend && left() === 0) {   // every shirt the company may claim is claimed: nothing to add (a claim can still be changed)
+      v.appendChild(allClaimed(others));
+      if (others.length) v.appendChild(othersSection(others));
+      showBar(false); window.scrollTo(0, y); return;
     }
-    var others = S.data.claims.filter(function (c) { return c.code !== S.amend; });
+    v.appendChild(photoSection());   // step 2: the team photo
+    if (isOpen()) prepareFaceLib();   // a photo is coming: get the counter ready
+    var ready = photoReady(), n = faces();
+    if (!ready) v.appendChild(hint(S.photo ? 'Counting the people in your photo…' : 'Add your team photo to continue.'));
+    else {
+      if (S.photo) v.appendChild(countSection());   // step 3: how many people — the phone's count, which the captain can fix
+      if (n !== 0) v.appendChild(shirtsSection());   // step 4: the sizes, one shirt per person (nobody in the photo: nothing to pick yet)
+    }
     if (others.length) v.appendChild(othersSection(others));
-    showBar(ready && !empty && anyPicked()); updateShirts(); updateBar();
+    showBar(ready && n !== 0); updateShirts(); updateBar();
     window.scrollTo(0, y);
+  }
+
+  function allClaimed(others) {
+    var c = el('div', 'card stack'), open = isOpen() && others.some(function (x) { return x.status !== 'collected'; }); c.style.marginTop = '20px';
+    c.appendChild(el('h2', null, 'All shirts claimed'));
+    c.appendChild(el('p', 'muted', 'All ' + allowance() + ' shirts for ' + S.data.company.name + ' have been claimed.' + (open ? ' To change a claim, tap Change below.' : '')));
+    return c;
   }
 
   function amendBanner() {
     var b = note('', ''), c = S.data.claims.filter(function (x) { return x.code === S.amend; })[0]; b.style.marginTop = '18px';
-    b.appendChild(document.createTextNode('Changing your claim for '));
-    b.appendChild(el('strong', null, c ? c.teamLabels.join(' + ') : 'your team'));
+    b.appendChild(document.createTextNode('Changing your claim'));
+    if (c) b.appendChild(document.createTextNode(' (' + nOf_(lineTotal(c), 'shirt', 'shirts') + (c.teamLabels.length ? ', ' + c.teamLabels.join(' + ') : '') + ')'));
     b.appendChild(document.createTextNode('. Your photo is kept unless you add a new one. '));
     var x = el('button', 'linklike', 'Cancel'); x.type = 'button'; x.onclick = function () { resetForm(); render(); }; b.appendChild(x);
     return b;
   }
 
-  function teamsSection() {
-    var sec = el('section', 'sec'), n = S.data.teams.length;
-    // Companies field 1 to 4 teams (a second squad in a division is common), so the wording follows the count.
-    var hint = n === 1 ? 'Tick your team to continue.'
-      : n === 2 ? 'Tick one or both. If a colleague already claimed the other team, that’s fine — just take yours.'
-      : 'Tick every team you’re claiming for. Several together is fine, or each team’s captain can claim their own on this same link. A team a colleague has already claimed is greyed out.';
-    sec.appendChild(el('h2', null, n === 1 ? '2. Your team' : '2. Which teams are you claiming for?'));
-    sec.appendChild(el('p', 'muted small', hint)).style.margin = '4px 0 12px';
-    var grid = el('div', 'stack');
-    S.data.teams.forEach(function (t) {
-      var on = !!S.picked[t.key], locked = !!t.claimedBy && !on;
-      var b = el('button', 'choice'); b.type = 'button'; b.setAttribute('role', 'checkbox'); b.setAttribute('aria-checked', on ? 'true' : 'false');
-      b.disabled = locked || !isOpen();
-      b.appendChild(el('span', 'tick', on ? '✓' : ''));
-      var txt = el('span', 'grow'); txt.appendChild(el('span', 'strong block', t.label));
-      txt.appendChild(el('span', 'muted small block', t.claimedBy ? (t.claimedBy.collected ? 'Shirts handed out' : S.amend === t.claimedBy.code ? 'Changing this claim' : 'Claimed by a colleague') : t.entitlement + ' shirts'));
-      b.appendChild(txt);
-      b.onclick = function () { if (S.picked[t.key]) delete S.picked[t.key]; else S.picked[t.key] = true; changed(); render(); };
-      grid.appendChild(b);
-    });
-    sec.appendChild(grid);
-    return sec;
-  }
-
   function shirtsSection() {
-    var sec = el('section', 'sec');
-    var e = ent(), c = cap(), f = faces();
-    sec.appendChild(el('h2', null, '3. Choose ' + (c < e ? 'up to ' : '') + c + ' shirt' + (c === 1 ? '' : 's')));
-    var help = 'Sizes are limited and shared across all 75 teams — this is live stock, first come first served. Just pick your sizes: GP Sports chooses the design for you. You can change your picks until your shirts are handed out.';
-    if (c < e && f != null) help = 'Your photo shows ' + f + (f === 1 ? ' person' : ' people') + ', so that is how many shirts you can claim (your team allowance is ' + e + '). ' + help;
+    var sec = el('section', 'sec'), c = cap(), f = faces(), e = left();
+    sec.appendChild(el('h2', null, num(S.photo ? 4 : 3) + 'Choose your sizes'));
+    var help = f == null ? 'Pick up to ' + nOf_(c, 'shirt', 'shirts') + '.'
+      : c < f ? 'Your photo shows ' + nOf_(f, 'person', 'people') + ', and ' + S.data.company.name + ' has ' + nOf_(e, 'shirt', 'shirts') + ' left to claim, so pick up to ' + c + '.'
+      : 'One shirt per person: pick up to ' + c + '.';
     sec.appendChild(dealBanner());
-    sec.appendChild(el('p', 'muted small', help)).style.margin = '12px 0 12px';
+    sec.appendChild(el('p', 'muted small', help + ' Sizes are live stock, first come first served. Just pick sizes: GP Sports chooses the design.')).style.margin = '12px 0 12px';
     var wrap = el('div', 'stack');
     S.data.sizes.forEach(function (size) {
       if (!S.data.stock.some(function (r) { return r.size === size; })) return;
       var card = el('div', 'sizecard line');
       var who = el('div', 'grow'), pr = el('div', 'prow'), price = el('span', 'price', rm(PRICE_CENTS)), tag = el('span', 'free', 'FREE'); pr.appendChild(price); pr.appendChild(tag);
-      who.appendChild(el('div', 'strong sz', 'Size ' + size)); who.appendChild(pr); var left = el('div', 'left'); who.appendChild(left);
-      var step = el('div', 'step'), minus = el('button', null, '−'), num = el('span', 'n', '0'), plus = el('button', null, '+');
+      who.appendChild(el('div', 'strong sz', 'Size ' + size)); who.appendChild(pr); var leftEl = el('div', 'left'); who.appendChild(leftEl);
+      var step = el('div', 'step'), minus = el('button', null, '−'), numEl = el('span', 'n', '0'), plus = el('button', null, '+');
       minus.type = plus.type = 'button';
       minus.setAttribute('aria-label', 'Remove one size ' + size); plus.setAttribute('aria-label', 'Add one size ' + size);
       minus.onclick = function () { bump(size, -1); }; plus.onclick = function () { bump(size, 1); };
-      step.appendChild(minus); step.appendChild(num); step.appendChild(plus);
+      step.appendChild(minus); step.appendChild(numEl); step.appendChild(plus);
       card.appendChild(who); card.appendChild(step); wrap.appendChild(card);
-      S.refs.push({ size: size, left: left, num: num, minus: minus, plus: plus, price: price, tag: tag });
+      S.refs.push({ size: size, left: leftEl, num: numEl, minus: minus, plus: plus, price: price, tag: tag });
     });
     sec.appendChild(wrap);
     return sec;
@@ -607,11 +595,11 @@ function faceCount(f, canvas, quarters, yn) {
 
   function photoSection() {
     var sec = el('section', 'sec');
-    sec.appendChild(el('h2', null, '1. Your team photo'));
+    sec.appendChild(el('h2', null, num(2) + 'Your team photo'));
     var p = el('p', 'muted small'); p.style.margin = '4px 0 0';
-    p.appendChild(document.createTextNode('The shirts are free — the photo is how you pay for them. Take a group shot of your team at the opening ceremony '));
+    p.appendChild(document.createTextNode('Take a group photo of your team '));
     p.appendChild(el('strong', null, 'with your company flag'));
-    p.appendChild(document.createTextNode(', then add it here.' + (S.data && S.data.teams.length > 1 ? ' Claiming for more than one team? One shot of everyone together is fine — or each team can claim separately with its own photo.' : '') + ' GP Sports staff use it to check your claim. Your phone also counts the people in it (nothing is uploaded for that), and you can claim one shirt for each person counted, so get everyone in the shot, facing the camera.'));
+    p.appendChild(document.createTextNode('. You get one free shirt for each person in it, so get everyone in, facing the camera.' + (S.data && S.data.teams.length > 1 ? ' More than one team? One photo of everyone is fine — or each team can claim with its own photo.' : '') + ' GP Sports staff use it to check your claim.'));
     sec.appendChild(p);
     var box = el('div', 'photobox'); box.id = 'photobox'; sec.appendChild(box);
     fillPhotoBox(box);
@@ -630,7 +618,8 @@ function faceCount(f, canvas, quarters, yn) {
       var ck = S.photo.check;
       if (!S.photoBusy && ck && ck.state === 'done' && ck.thumbs.length) box.appendChild(ck.row = ck.row || faceRow(ck.thumbs));
       var l = el('label', 'retake', 'Retake'); l.appendChild(fileInput()); box.appendChild(l);
-      box.appendChild(S.photoBusy ? el('p', 'muted small', 'Preparing your new photo…') : checkBlock());
+      if (S.photoBusy) box.appendChild(el('p', 'muted small', 'Preparing your new photo…'));
+      else if (!ck || ck.state === 'running') box.appendChild(el('p', 'muted small', ck && ck.slow ? 'Still counting… The first photo takes longer while your phone fetches the people counter (once). Please keep this page open.' : 'Counting the people in your photo…'));
     } else if (S.amend) {
       var kept = faces(), q = el('p', 'muted'); q.style.margin = '0';
       q.appendChild(document.createTextNode('Keeping the photo you already sent' + (kept != null ? ' (' + kept + (kept === 1 ? ' person' : ' people') + ')' : '') + '. '));
@@ -643,7 +632,7 @@ function faceCount(f, canvas, quarters, yn) {
   // The photo, with a box on every face that was counted, so the captain sees who is in the count (and who is missing). The box
   // layer uses the same "cover" fit as the picture, so the boxes stay on the faces however the preview crops it. Drawn on the
   // page only: the photo that is sent has no boxes. The picture element is made once per photo (decoding it again on every
-  // redraw would make ticking a team stutter on a slow phone).
+  // redraw would make every tap stutter on a slow phone).
   function shot(p, busy) {
     var wrap = el('div', 'shot'), ck = busy ? null : p.check;
     if (!p.img) { p.img = el('img'); p.img.alt = 'Your team photo'; p.img.src = p.preview; }
@@ -782,7 +771,7 @@ function faceCount(f, canvas, quarters, yn) {
   }
   function startCheck(canvas, full, release) {
     var mine = S.photo; if (!mine) return release();
-    mine.check = { state: 'running' }; render();   // the teams and shirts steps wait for the count
+    mine.check = { state: 'running' }; render();   // the count and sizes steps wait for it
     var later = setTimeout(function () { if (S.photo === mine && mine.check.state === 'running') { mine.check.slow = true; fillPhotoBox(); } }, 8000);
     checkPhoto(canvas).then(function (r) {
       clearTimeout(later);
@@ -795,50 +784,36 @@ function faceCount(f, canvas, quarters, yn) {
       mine.check = { state: 'failed' }; changed(); render();
     });
   }
-  function checkBlock() {
-    var wrap = el('div', 'stack'), ck = S.photo && S.photo.check; wrap.style.marginTop = '10px';
-    if (!ck || ck.state === 'running') {
-      wrap.appendChild(el('p', 'muted small', ck && ck.slow ? 'Still counting… The first photo takes longer while your phone fetches the people counter (once). Please keep this page open.' : 'Counting the people in your photo…'));
-      return wrap;
-    }
-    if (ck.state === 'failed') { wrap.appendChild(el('p', 'muted small', 'The quick photo count isn’t available on this phone. No problem: you can go on, and GP Sports staff will check your photo.')); return wrap; }
-    var a = photoAdvice(ck), f = ck.faces, said = ck.said > f ? ck.said : 0;
-    if (said) {
-      wrap.appendChild(el('p', 'strong', 'We counted ' + f + ' — you told us ' + said + (said === 1 ? ' person' : ' people') + '. You can claim one shirt per person, up to your team’s allowance.'));
-      wrap.appendChild(note('', 'GP Sports staff will check your photo before handing out the shirts.'));
-    } else {
-      if (f > 0) wrap.appendChild(el('p', 'strong', 'We counted ' + f + (f === 1 ? ' person' : ' people') + '. You can claim one shirt per person, up to your team’s allowance.'));
-      a.warnings.forEach(function (w) { wrap.appendChild(note('warn', w)); });
-      if (f === 0) wrap.appendChild(el('p', 'muted small', 'Retake the photo to go on — or, if your team is in it, tell us how many people below.'));
-      else wrap.appendChild(el('p', 'muted small', 'Everyone counted is boxed on the photo and in the row of faces under it. Someone missing? Retake it with everyone facing the camera — or tell us below.'));
-    }
-    wrap.appendChild(countFix(ck));
-    return wrap;
-  }
-  // The count is the phone's, and a face hidden behind someone, turned away or in deep shadow can be missed. Rather than leave the
-  // captain stuck below their team, they may say how many people are really in the photo — more than counted, at most everything the
-  // company's teams may claim. The claim then carries "CHECK: captain says N people", and the desk checks the photo before handing out.
-  function countFix(ck) {
-    var box = el('div', 'fix'), most = S.data ? S.data.teams.reduce(function (a, t) { return a + t.entitlement; }, 0) : 0;
-    if (!S.data || most <= ck.faces || !isOpen()) return box;
-    if (!(ck.said > ck.faces)) {
-      var ask = el('button', 'linklike', 'Count wrong? Tell us how many people are in the photo'); ask.type = 'button';
-      ask.onclick = function () { ck.said = ck.faces + 1; changed(); render(); };
-      box.appendChild(ask);
-      return box;
-    }
-    var row = el('div', 'line'), step = el('div', 'step'), minus = el('button', null, '−'), plus = el('button', null, '+');
-    row.appendChild(el('span', 'grow strong', 'People in your photo'));
+  // Step 3: how many people. The number is the phone's, and it can be wrong — a face hidden behind someone, turned away or in deep
+  // shadow is missed; a bystander behind the team is counted — so it sits between − and +, and one tap fixes it. The shirts follow
+  // the number shown. A number above the phone's goes to the desk as "CHECK: captain says N people" (staff check the photo before
+  // handing out); one below it is just noted. At most everything the company may claim (more would change nothing).
+  function countSection() {
+    var sec = el('section', 'sec'), ck = S.photo.check;
+    sec.appendChild(el('h2', null, num(3) + 'People in your photo'));
+    if (ck.state === 'failed') { sec.appendChild(el('p', 'muted small', 'Your phone couldn’t count the people in this photo. No problem: carry on, and GP Sports staff will check the photo.')).style.margin = '4px 0 0'; return sec; }
+    var f = ck.faces, n = people(ck), most = Math.max(f, allowance()), fixed = ck.said > 0;
+    var box = el('div', 'count'), row = el('div', 'line'), what = el('div', 'grow');
+    what.appendChild(el('div', 'big', nOf_(n, 'person', 'people')));
+    what.appendChild(el('div', 'muted small', fixed ? 'You changed it — we counted ' + f : f === 0 ? 'We couldn’t find anyone' : 'Counted by your phone'));
+    var step = el('div', 'step'), minus = el('button', null, '−'), plus = el('button', null, '+');
     minus.type = plus.type = 'button'; minus.setAttribute('aria-label', 'One person fewer'); plus.setAttribute('aria-label', 'One person more');
-    minus.disabled = ck.said <= ck.faces + 1; plus.disabled = ck.said >= most;
-    minus.onclick = function () { ck.said = Math.max(ck.faces + 1, ck.said - 1); changed(); render(); };
-    plus.onclick = function () { ck.said = Math.min(most, ck.said + 1); changed(); render(); };
-    step.appendChild(minus); step.appendChild(el('span', 'n', String(ck.said))); step.appendChild(plus); row.appendChild(step); box.appendChild(row);
-    var back = el('button', 'linklike', 'Use our count (' + ck.faces + ') instead'); back.type = 'button';
-    back.onclick = function () { ck.said = 0; changed(); render(); };
-    var p = el('p', 'small'); p.style.margin = '8px 0 0'; p.appendChild(back); box.appendChild(p);
-    return box;
+    minus.disabled = n <= 1 || !isOpen(); plus.disabled = n >= most || !isOpen();
+    minus.onclick = function () { setPeople(ck, n - 1); }; plus.onclick = function () { setPeople(ck, n + 1); };
+    step.appendChild(minus); step.appendChild(el('span', 'n', String(n))); step.appendChild(plus);
+    row.appendChild(what); row.appendChild(step); box.appendChild(row); sec.appendChild(box);
+    if (!fixed) photoAdvice(ck).warnings.forEach(function (w) { sec.appendChild(note('warn', w)).style.marginTop = '10px'; });
+    var p = el('p', 'muted small'); p.style.margin = '8px 0 0';
+    if (!fixed) p.textContent = f === 0 ? 'Retake the photo — or, if your team is in it, use + to tell us how many people there are.'
+      : 'Wrong number? Fix it with − and +. Everyone counted has a yellow box on the photo and a face in the row under it.';
+    else {
+      if (n > f) p.appendChild(document.createTextNode('GP Sports staff will check your photo before handing out the shirts. '));
+      var back = el('button', 'linklike', 'Use our count (' + f + ')'); back.type = 'button'; back.onclick = function () { setPeople(ck, f); }; p.appendChild(back);
+    }
+    sec.appendChild(p);
+    return sec;
   }
+  function setPeople(ck, n) { ck.said = n === ck.faces ? 0 : n; changed(); render(); }
   function checkNote() {   // what the desk is told, in one line
     var ck = S.photo && S.photo.check;
     if (!ck || ck.state === 'running') return 'not finished on the phone';
@@ -852,15 +827,18 @@ function faceCount(f, canvas, quarters, yn) {
     var wrap = el('div'); wrap.style.marginTop = '10px';
     list.forEach(function (c) {
       var m = el('div', 'mini'), t = el('div', 'grow');
-      t.appendChild(el('div', 'strong', c.teamLabels.join(' + ')));
-      var picked = c.lines.reduce(function (a, l) { return a + l.qty; }, 0);   // what it actually holds — a claim may take fewer than its allowance
-      t.appendChild(el('div', 'muted small', c.status === 'collected' ? 'Shirts handed out' : picked + (picked === 1 ? ' shirt' : ' shirts') + ' reserved'));
+      t.appendChild(el('div', 'strong', nOf_(lineTotal(c), 'shirt', 'shirts') + (c.teamLabels.length ? ' · ' + c.teamLabels.join(' + ') : '')));   // (claims before 5 Oct named their teams)
+      t.appendChild(el('div', 'muted small', (c.status === 'collected' ? 'Handed out' : 'Reserved') + (when(c.created) ? ' · claimed ' + when(c.created) : '')));
       m.appendChild(t);
       if (c.status !== 'collected' && isOpen()) { var b = el('button', 'btn ghost slim', 'Change'); b.type = 'button'; b.onclick = function () { startAmend(c); }; m.appendChild(b); }
       wrap.appendChild(m);
     });
     sec.appendChild(wrap);
     return sec;
+  }
+  function when(stamp) {   // "2026-10-05 14:32:10" (Malaysia time, as the server writes it) → "5 Oct, 14:32"
+    var m = /^(\d{4})-(\d\d)-(\d\d) (\d\d:\d\d)/.exec(stamp || '');
+    return m ? Number(m[3]) + ' ' + ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'][Number(m[2]) - 1] + ', ' + m[4] : '';
   }
 
   function updateBar() {
@@ -882,21 +860,21 @@ function faceCount(f, canvas, quarters, yn) {
   // ---------- send ----------
   function submit() {
     if (S.busy || S.photoBusy) return;
-    var keys = pickedTeams().map(function (t) { return t.key; });
     var lines = Object.keys(S.qty).filter(function (k) { return S.qty[k] > 0; }).map(function (k) { return { size: k, qty: S.qty[k] }; });
     if (!S.requestId) S.requestId = uuid();
-    var snapshot = { teams: pickedTeams().map(function (t) { return t.label; }), lines: S.data.sizes.filter(function (z) { return S.qty[z] > 0; }).map(function (z) { return { size: z, qty: S.qty[z] }; }) };
-    var req = who(); req.requestId = S.requestId; req.teamKeys = keys; req.lines = lines; req.amendCode = S.amend || null; req.photo = S.photo ? { mime: S.photo.mime, b64: S.photo.b64 } : null;
+    var snapshot = { company: S.data.company.name, lines: S.data.sizes.filter(function (z) { return S.qty[z] > 0; }).map(function (z) { return { size: z, qty: S.qty[z] }; }) };
+    // (no teams: the claim draws on the company's allowance)
+    var req = who(); req.requestId = S.requestId; req.lines = lines; req.amendCode = S.amend || null; req.photo = S.photo ? { mime: S.photo.mime, b64: S.photo.b64 } : null;
     if (S.photo) req.photoCheck = checkNote();   // (only with a NEW photo: an unchanged photo keeps the note it already has)
     S.busy = true; S.error = ''; updateBar(); $('company').disabled = true;
     call('api_claim', req, 90000).then(function (res) {
       S.busy = false; $('company').disabled = false;
       if (res.ok) {
-        S.requestId = ''; S.done = { code: res.code, amended: !!res.amended, teams: snapshot.teams, lines: snapshot.lines };
+        S.requestId = ''; S.done = { amended: !!res.amended, company: snapshot.company, lines: snapshot.lines };
         renderDone(); load(true).then(function (ok) { if (ok) render(); });   // (render: the captain may already have moved on — e.g. "Claim for another team too")
       } else {
         S.error = res.error || 'Something went wrong. Please try again.'; updateBar();
-        if (res.kind === 'out_of_stock' || res.kind === 'already_claimed') load(true).then(function () { render(); });
+        if (res.kind === 'out_of_stock' || res.kind === 'already_claimed' || res.kind === 'over_allowance') load(true).then(function () { render(); });   // someone else just took them: show what is left
         if (res.kind === 'busy') S.error = 'The system is busy — please tap Confirm again in a moment.';
         updateBar();
       }
@@ -906,31 +884,20 @@ function faceCount(f, canvas, quarters, yn) {
   }
 
   function startAmend(c) {
-    S.amend = c.code; S.picked = {}; c.teamKeys.forEach(function (k) { S.picked[k] = true; });
-    S.qty = {}; c.lines.forEach(function (l) { S.qty[l.size] = (S.qty[l.size] || 0) + l.qty; });
+    S.amend = c.code; S.qty = {}; c.lines.forEach(function (l) { S.qty[l.size] = (S.qty[l.size] || 0) + l.qty; });
     S.photo = null; S.done = null; changed(); render(); window.scrollTo(0, 0);
   }
-  function resetForm() { S.amend = ''; S.picked = {}; S.qty = {}; S.photo = null; S.done = null; changed(); }
+  function resetForm() { S.amend = ''; S.qty = {}; S.photo = null; S.done = null; changed(); }
 
+  // Done: just a simple message (the owner's words, 5 Oct: "just a simple message that says, will distribute the t-shirts soon"),
+  // with the sizes reserved in one small line. No code: GP Sports brings the shirts to the team.
   function renderDone() {
-    var d = S.done, v = view(); showBar(false);
-    var card = el('div', 'card done'); card.style.marginTop = '20px';
-    card.appendChild(el('p', 'eyebrow', (d.amended ? 'Updated — ' : '') + d.teams.join(' + ')));
-    card.appendChild(el('p', 'reserved', 'Reserved!'));
-    card.appendChild(el('p', 'muted', 'GP Sports will distribute your shirts shortly.')).style.margin = '0';
-    var tb = el('table', 'sum'), body = el('tbody'), n = 0;
-    d.lines.forEach(function (l) { n += l.qty; var tr = el('tr'); tr.appendChild(el('td', null, l.qty + '×')); tr.appendChild(el('td', null, 'Size ' + l.size)); body.appendChild(tr); });
-    var tr2 = el('tr'); tr2.appendChild(el('td', null, n + '×')); var tdt = el('td', null, 'total'); tdt.style.textAlign = 'left'; tdt.style.fontFamily = 'inherit'; tr2.appendChild(tdt); body.appendChild(tr2);
-    tb.appendChild(body); card.appendChild(tb);
-    var worth = el('p', 'small'); worth.style.margin = '12px 0 0';
-    worth.appendChild(document.createTextNode('Worth ')); var was = el('span', 'was', rm(n * PRICE_CENTS)); worth.appendChild(was);
-    worth.appendChild(document.createTextNode(' ')); worth.appendChild(el('strong', 'yes', 'FREE')); worth.appendChild(document.createTextNode(', courtesy of the organiser, GP Sports.'));
-    card.appendChild(worth);
-    var mine = S.data.claims.filter(function (c) { return c.code === d.code; })[0];
-    var actions = el('div', 'stack'); actions.style.marginTop = '16px';
-    if (mine && mine.status !== 'collected' && isOpen()) { var ch = el('button', 'btn ghost', 'Change this claim'); ch.type = 'button'; ch.onclick = function () { startAmend(mine); }; actions.appendChild(ch); }
-    if (S.data.teams.some(function (t) { return !t.claimedBy; }) && isOpen()) { var an = el('button', 'btn ghost', 'Claim for another team too'); an.type = 'button'; an.onclick = function () { resetForm(); render(); window.scrollTo(0, 0); }; actions.appendChild(an); }
-    card.appendChild(actions);
+    var d = S.done, v = view(), n = d.lines.reduce(function (a, l) { return a + l.qty; }, 0); showBar(false);
+    var card = el('div', 'card done center'); card.style.marginTop = '20px';
+    card.appendChild(el('div', 'tickbig', '✓')).setAttribute('aria-hidden', 'true');
+    card.appendChild(el('h2', null, d.amended ? 'Updated!' : 'Done!'));
+    card.appendChild(el('p', 'msg', 'Your T-shirts are reserved. GP Sports will distribute them soon.'));
+    card.appendChild(el('p', 'muted small', d.company + ' · ' + nOf_(n, 'shirt', 'shirts') + ': ' + d.lines.map(function (l) { return l.qty + ' × ' + l.size; }).join(', '))).style.margin = '14px 0 0';
     v.appendChild(card);
   }
 
@@ -959,10 +926,10 @@ function faceCount(f, canvas, quarters, yn) {
   }
   function pick(name) {
     S.company = name; try { localStorage.setItem('yx-company', name); } catch (e) {}
-    // Another company has other teams and claims, so the teams ticked go. Part-way through a claim (the wrong company picked first)
-    // the photo, its count and the sizes picked stay, so the captain does not have to add the photo again. But once a claim is made
-    // — or while one is being changed — they belong to that claim: the next company starts afresh, with its own team photo.
-    if (S.done || S.amend) resetForm(); else { S.picked = {}; changed(); }
+    // Part-way through a claim (the wrong company picked first) the photo, its count and the sizes picked stay, so the captain does not
+    // have to add the photo again. But once a claim is made — or while one is being changed — they belong to that claim: the next
+    // company starts afresh, with its own team photo.
+    if (S.done || S.amend) resetForm(); else changed();
     S.data = null; $('title').textContent = 'Claim your shirts'; document.title = 'Yonex bonus shirt – FTZ P.LAB Cup 2026';
     reload();
   }

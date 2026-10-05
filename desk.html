@@ -178,9 +178,9 @@ function call(fn, arg, ms, tries) {
 }
 
 /* ---- the photo check's advice (pure, so it is tested on its own) ----
-   `check` = { faces, said } — faces as counted ON THE PHONE; said = how many people the captain says are in the photo, when the
-   counter missed someone (only a number above the count is taken). The count is what limits the shirts (cap() in the page); this
-   only adds a warning when the photo looks wrong for a team photo, and tells the desk when the captain corrected the count.
+   `check` = { faces, said } — faces as counted ON THE PHONE; said = how many people the captain says are in the photo, when they
+   corrected the count (0 or missing = they did not). The number limits the shirts (cap() in the page); this only adds a warning
+   when the photo looks wrong for a team photo, and flags it for the desk when the captain says MORE people than were counted.
    (There used to be a men/women guess too. It was dropped on 3 Oct 2026: on test photos it called 17 of 18 players of a women's
    team "men", and it would have told that team it looked like a men's team.)
    Returns { warnings: [texts for the captain], short: [phrases for the desk's one-line note] }. */
@@ -198,12 +198,13 @@ function photoAdvice(check) {
   return out;
 }
 
-/* The one line the desk sees next to the photo, e.g. "11 faces", "2 faces · CHECK: only 2 faces", or "11 faces · CHECK: captain says
-   13 people". The server reads the count from it (facesFromCheck_ in src/Api.js): the captain's number when there is one, else the
-   "<number> face(s)" it must start with. */
+/* The one line the desk sees next to the photo, e.g. "11 faces", "2 faces · CHECK: only 2 faces", "11 faces · CHECK: captain says
+   13 people", or "17 faces · captain says 15 people" (fewer than counted — a bystander was counted: noted, not flagged). The server
+   reads the count from it (facesFromCheck_ in src/Api.js): the captain's number when there is one, else the "<number> face(s)" it
+   must start with. */
 function photoNoteText(check) {
-  var a = photoAdvice(check);
-  return nOf_(check.faces, 'face', 'faces') + (a.short.length ? ' · CHECK: ' + a.short.join('; ') : '');
+  var a = photoAdvice(check), fewer = check.said > 0 && check.said < check.faces;
+  return nOf_(check.faces, 'face', 'faces') + (fewer ? ' · captain says ' + nOf_(check.said, 'person', 'people') : '') + (a.short.length ? ' · CHECK: ' + a.short.join('; ') : '');
 }
 
 </script>
@@ -257,6 +258,9 @@ function photoNoteText(check) {
   $('findgo').onclick = function () { find(); };
   $('code').onkeydown = function (e) { if (e.key === 'Enter') find(); };
 
+  // A claim in a few words: its teams, for a claim that named them (before 5 Oct 2026 — claims now draw on the company's
+  // allowance without picking a team), and its shirts.
+  function what(c) { return (c.teamLabels && c.teamLabels.length ? c.teamLabels.join(' + ') + ' · ' : '') + c.total + (c.total === 1 ? ' shirt' : ' shirts'); }
   function badge(status) {
     var b = el('span', 'badge' + (status === 'reserved' ? ' ok' : status === 'cancelled' ? ' bad' : ''), status === 'reserved' ? 'Ready' : status === 'collected' ? 'Handed out' : 'Cancelled');
     return b;
@@ -265,7 +269,7 @@ function photoNoteText(check) {
     var out = $('result'); out.textContent = '';
     var card = el('div', 'card'); card.style.marginTop = '16px';
     var head = el('div', 'row'); var h = el('h2', 'grow', c.company); head.appendChild(h); head.appendChild(badge(c.status)); card.appendChild(head);
-    card.appendChild(el('p', 'muted', c.teamLabels.join(' + ') + ' · ' + c.entitlement + ' entitled')).style.margin = '4px 0 0';
+    card.appendChild(el('p', 'muted', what(c))).style.margin = '4px 0 0';
     if (c.status === 'collected') card.appendChild(el('p', 'small muted', 'Handed out ' + c.collectedAt + ' by ' + c.collectedBy)).style.margin = '4px 0 0';
     if (c.status === 'cancelled') card.appendChild(el('p', 'small muted', 'Cancelled' + (c.note ? ': ' + c.note : ''))).style.margin = '4px 0 0';
 
@@ -335,7 +339,7 @@ function photoNoteText(check) {
         list.textContent = ''; var t = q.value.trim().toLowerCase(), n = 0;
         r.claims.filter(function (c) { return (filterBy === 'all' || c.status === filterBy) && (!t || c.company.toLowerCase().indexOf(t) >= 0 || c.code.toLowerCase().indexOf(t) >= 0); }).forEach(function (c) {
           n++; var it = el('button', 'item'); it.type = 'button'; var g = el('div', 'grow'); g.appendChild(el('div', 'strong', c.company));
-          g.appendChild(el('div', 'small muted', c.teamLabels.join(' + ') + ' · ' + c.total + ' shirts · ' + c.created.slice(5, 16) + (c.flagged ? ' · photo check flagged' : '')));
+          g.appendChild(el('div', 'small muted', what(c) + ' · ' + c.created.slice(5, 16) + (c.flagged ? ' · photo check flagged' : '')));
           it.appendChild(g); it.appendChild(el('span', 'c', c.code)); it.appendChild(badge(c.status));
           it.onclick = function () { tab('find'); $('code').value = c.code; find(c.code); }; list.appendChild(it);
         });
@@ -347,7 +351,7 @@ function photoNoteText(check) {
 
   // ---------- distribution: what to pack for each company, and what to pull from the boxes ----------
   // GP Sports takes the shirts to the teams (the captain page says it will distribute them shortly), so staff pack per company.
-  // This lists every claim to deliver — company, teams, design × size × quantity — with the totals to pull from stock, prints
+  // This lists every claim to deliver — company, shirts, design × size × quantity — with the totals to pull from stock, prints
   // cleanly (tick boxes on paper), and marks a claim handed out when its bag is delivered (the same as "Hand over" on a code).
   var distBy = 'reserved', SIZE_ORDER = ['XS', 'S', 'M', 'L', 'XL', '2XL', '3XL'];
   function byDesignSize(a, b) { return ((DESIGNS[a.design] || 9) - (DESIGNS[b.design] || 9)) || (SIZE_ORDER.indexOf(a.size) - SIZE_ORDER.indexOf(b.size)); }
@@ -393,9 +397,9 @@ function photoNoteText(check) {
         var mine = list.filter(function (c) { return c.company === name; }), card = el('div', 'card dco'), h = el('h3', null, name);
         h.appendChild(el('span', null, mine.reduce(function (a, c) { return a + c.total; }, 0) + ' shirts')); card.appendChild(h);
         mine.forEach(function (c) {
-          var blk = el('div', 'dcl'), what = el('div', 'what');
-          what.appendChild(el('span', 'box')); what.appendChild(document.createTextNode(c.teamLabels.join(' + ') + ' · ' + c.total + (c.total === 1 ? ' shirt' : ' shirts')));
-          blk.appendChild(what);
+          var blk = el('div', 'dcl'), head = el('div', 'what');
+          head.appendChild(el('span', 'box')); head.appendChild(document.createTextNode(what(c)));
+          blk.appendChild(head);
           blk.appendChild(el('div', null, c.lines.slice().sort(byDesignSize).map(function (l) { return l.qty + '× ' + l.design + ' ' + l.size; }).join(' · ')));
           if (c.flagged) blk.appendChild(note('warn', c.note.replace(/^Photo check \(phone estimate\): /, 'Photo check: '))).style.marginTop = '6px';
           blk.appendChild(el('div', 'small muted', c.code + ' · claimed ' + c.created.slice(5, 16) + (c.status === 'collected' ? ' · handed out ' + c.collectedAt.slice(5, 16) + (c.collectedBy ? ' by ' + c.collectedBy : '') : '')));
